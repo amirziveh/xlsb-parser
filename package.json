@@ -19,6 +19,7 @@
   "scripts": {
     "build": "tsc",
     "build:browser": "esbuild src/index.ts --bundle --outfile=public/bundle.js --format=esm",
+    "test": "vitest run",
     "dev": "node server.mjs",
     "prepublishOnly": "npm run build",
     "prepare": "npm run build"
