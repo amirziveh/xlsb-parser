@@ -1,0 +1,9 @@
+dist
+node_modules
+.hive
+*.xlsb
+*.xlsx
+*.docx
+*.db
+tmp_decode.mjs
+debug.mjs

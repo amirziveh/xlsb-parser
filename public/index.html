@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>XLSB Parser</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font: 14px/1.4 system-ui, sans-serif; background: #f5f5f5; color: #222; padding: 20px; }
+  h1 { font-size: 20px; margin-bottom: 12px; }
+  #upload { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  #upload input { font-size: 14px; }
+  #upload button { padding: 6px 16px; font-size: 14px; cursor: pointer; }
+  #upload .note { color: #666; font-size: 12px; }
+  #status { margin-bottom: 12px; font-size: 13px; color: #555; }
+  #error { color: #c33; margin-bottom: 12px; font-size: 13px; }
+  .tabs { display: flex; gap: 2px; margin-bottom: 8px; flex-wrap: wrap; }
+  .tabs button { padding: 6px 14px; border: 1px solid #ccc; background: #eee; cursor: pointer;
+    font-size: 13px; border-radius: 4px 4px 0 0; }
+  .tabs button.active { background: #fff; border-bottom: 2px solid #06c; font-weight: 600; }
+  .table-wrap { overflow: auto; max-height: 80vh; background: #fff; border: 1px solid #ccc; border-radius: 0 4px 4px 4px; }
+  table { border-collapse: collapse; font-size: 13px; }
+  th, td { border: 1px solid #ddd; padding: 3px 8px; min-width: 80px; text-align: left; white-space: nowrap; }
+  th { background: #f0f0f0; position: sticky; top: 0; z-index: 1; font-weight: 600; }
+  th.row-header { background: #f0f0f0; min-width: 40px; text-align: center; position: sticky; left: 0; z-index: 2; }
+  td.row-header { background: #f8f8f8; min-width: 40px; text-align: center; font-weight: 600;
+    color: #888; position: sticky; left: 0; z-index: 1; }
+  td.s { color: #06c; }
+  td.n { color: #060; }
+  td.b { color: #c60; }
+  td.e { color: #c00; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<h1>&#x1f4c4; XLSB Parser Prototype</h1>
+<div id="upload">
+  <input type="file" accept=".xlsb" id="fileInput">
+  <button id="parseBtn">Parse</button>
+  <span class="note">Upload an .xlsb file to see its contents</span>
+</div>
+<div id="status"></div>
+<div id="log" style="background:#f8f8f8;border:1px solid #ddd;padding:8px;font:12px/1.5 monospace;white-space:pre;overflow:auto;max-height:200px;margin-bottom:12px;display:none"></div>
+<div id="error"></div>
+<div id="sheets" class="hidden">
+  <div class="tabs" id="tabs"></div>
+  <div class="table-wrap" id="tableWrap"></div>
+</div>
+<script>
+window.onerror = (msg, src, line, col, err) => {
+  const log = document.getElementById('log');
+  if (log) log.textContent += 'GLOBAL ERROR: ' + (err?.stack || msg) + '\n';
+};
+window.addEventListener('unhandledrejection', e => {
+  const log = document.getElementById('log');
+  if (log) log.textContent += 'UNHANDLED: ' + (e.reason?.stack || e.reason) + '\n';
+});
+</script>
+<script type="module">
+import { parseXlsb } from './bundle.js?v=2';
+console.log('XLSB parser module loaded');
+
+const $ = id => document.getElementById(id);
+const fileInput = $('fileInput');
+const parseBtn = $('parseBtn');
+const statusEl = $('status');
+const logEl = $('log');
+const errorEl = $('error');
+const sheetsEl = $('sheets');
+const tabsEl = $('tabs');
+const tableWrap = $('tableWrap');
+
+function log(msg) {
+  console.log(msg);
+  logEl.textContent += msg + '\n';
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+parseBtn.onclick = async () => {
+  const file = fileInput.files[0];
+  if (!file) { errorEl.textContent = 'Select a file first'; return; }
+  if (!file.name.toLowerCase().endsWith('.xlsb')) {
+    errorEl.textContent = 'File must have .xlsb extension';
+    return;
+  }
+  errorEl.textContent = '';
+  statusEl.textContent = 'Parsing...';
+  logEl.style.display = 'block';
+  log('Starting...');
+  log('File size: ' + (file.size / 1024 / 1024).toFixed(1) + ' MB');
+  sheetsEl.classList.add('hidden');
+  try {
+    const data = await file.arrayBuffer();
+    log('Got ArrayBuffer: ' + (data.byteLength / 1024 / 1024).toFixed(1) + ' MB');
+    // Let the browser paint the log before sync work starts
+    await new Promise(r => setTimeout(r, 10));
+    const wb = await parseXlsb(data, (msg, pct) => {
+      log('[' + pct + '%] ' + msg);
+    });
+    log('Done! ' + wb.sheets.length + ' sheets, ' + wb.sharedStrings.length + ' shared strings');
+    statusEl.textContent = `Parsed ${wb.sheets.length} sheet(s), ${wb.sharedStrings.length} shared string(s), ${wb.summary.totalRecords.toLocaleString()} binary records`;
+    log('Rendering tables...');
+    await new Promise(r => setTimeout(r, 10));
+    await renderSheets(wb);
+    log('Tables rendered');
+    if (wb.pivotCaches && wb.pivotCaches.length > 0) {
+      const btn = document.createElement('button');
+      btn.textContent = 'Pivot Caches (' + wb.pivotCaches.length + ')';
+      btn.onclick = () => showPivotCaches(wb);
+      tabsEl.appendChild(btn);
+    }
+  } catch (e) {
+    log('ERROR: ' + (e?.stack || e?.message || e));
+    errorEl.textContent = 'Error: ' + (e?.message || e);
+    statusEl.textContent = 'Parse failed';
+  }
+};
+
+const ROW_LIMIT = 100;
+
+function escHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function renderSheets(wb) {
+  tabsEl.innerHTML = '';
+  tableWrap.innerHTML = '';
+  wb.sheets.forEach((s, i) => {
+    const btn = document.createElement('button');
+    btn.textContent = s.name;
+    btn.onclick = () => { showSheet(wb, i); };
+    tabsEl.appendChild(btn);
+  });
+  sheetsEl.classList.remove('hidden');
+  if (wb.sheets.length) await showSheet(wb, 0);
+}
+
+async function showSheet(wb, idx) {
+  tabsEl.querySelectorAll('button').forEach((b, i) => b.classList.toggle('active', i === idx));
+  const sheet = wb.sheets[idx];
+  log('Render: ' + sheet.name + ' (' + sheet.rows.length + ' rows, ' + sheet.totalCells + ' cells)');
+
+  const colSet = new Set();
+  const scanRows = sheet.rows.slice(0, Math.min(ROW_LIMIT, sheet.rows.length));
+  for (const r of scanRows) {
+    for (const cn of Object.keys(r.cols)) colSet.add(Number(cn));
+  }
+  log('ColSet: ' + colSet.size + ' unique columns');
+
+  await new Promise(r => setTimeout(r, 0));
+
+  const colNums = [...colSet].sort((a, b) => a - b);
+  const COL_LIMIT = 100;
+  const colLimited = colNums.length > COL_LIMIT;
+  const showCols = colLimited ? colNums.slice(0, COL_LIMIT) : colNums;
+
+  const colLetter = (c) => {
+    let s = '';
+    let n = c + 1;
+    while (n > 0) { n--; s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26); }
+    return s;
+  };
+
+  const rows = sheet.rows.slice(0, ROW_LIMIT);
+  log('Building HTML for ' + rows.length + ' rows x ' + showCols.length + ' cols (total cols: ' + colNums.length + ')...');
+
+  const parts = [];
+  parts.push('<table><thead><tr><th class="row-header"></th>');
+  for (const c of showCols) parts.push(`<th>${colLetter(c)}</th>`);
+  if (colLimited) parts.push('<th style="color:#999">…</th>');
+  parts.push('</tr></thead><tbody>');
+
+  for (let i = 0; i < rows.length; i++) {
+    if (i > 0 && i % 50 === 0) await new Promise(r => setTimeout(r, 0));
+    const r = rows[i];
+    parts.push(`<tr><td class="row-header">${r.row + 1}</td>`);
+    for (const c of showCols) {
+      const cell = r.cols[c];
+      if (!cell) { parts.push('<td></td>'); continue; }
+      let val = '';
+      let cls = '';
+      switch (cell.t) {
+        case 'n': val = String(cell.v); cls = 'n'; break;
+        case 's': val = cell.v; cls = 's'; break;
+        case 'b': val = cell.v ? 'TRUE' : 'FALSE'; cls = 'b'; break;
+        case 'e': val = cell.err || '#ERR'; cls = 'e'; break;
+        case 'blank': break;
+      }
+      parts.push(`<td class="${cls}">${escHtml(val)}</td>`);
+    }
+    if (colLimited) parts.push('<td style="color:#999">…</td>');
+    parts.push('</tr>');
+  }
+  parts.push('</tbody></table>');
+  if (sheet.rows.length > ROW_LIMIT) {
+    parts.push(`<p style="padding:8px;color:#888;font-size:12px">Showing first ${ROW_LIMIT} of ${sheet.rows.length} rows</p>`);
+  }
+  if (colLimited) {
+    parts.push(`<p style="padding:0 8px 8px;color:#888;font-size:12px">Showing first ${COL_LIMIT} of ${colNums.length} columns</p>`);
+  }
+  log('Setting innerHTML...');
+  tableWrap.innerHTML = parts.join('');
+  log('Done rendering');
+}
+
+async function showPivotCaches(wb) {
+  tabsEl.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+  tableWrap.innerHTML = '';
+  let html = '';
+
+  for (let ci = 0; ci < wb.pivotCaches.length; ci++) {
+    const pc = wb.pivotCaches[ci];
+    const names = pc.fieldNames;
+    const maxRow = Math.min(50, pc.rows.length);
+    const maxCol = Math.min(names.length, 50);
+    html += `<h3 style="margin:12px 0 4px">${pc.name} — ${pc.rowCount.toLocaleString()} records, ${names.length} fields</h3>`;
+    html += '<div class="table-wrap" style="max-height:60vh"><table><thead><tr><th class="row-header">#</th>';
+    for (let c = 0; c < maxCol; c++) html += `<th>${escHtml(names[c] || '?')}</th>`;
+    html += '</tr></thead><tbody>';
+
+    for (let r = 0; r < maxRow; r++) {
+      html += `<tr><td class="row-header">${r + 1}</td>`;
+      const row = pc.rows[r];
+      for (let c = 0; c < maxCol; c++) {
+        const v = row[c];
+        if (v === null || v === undefined) {
+          html += '<td></td>';
+        } else if (typeof v === 'string') {
+          html += `<td class="s">${escHtml(v)}</td>`;
+        } else {
+          html += `<td class="n">${typeof v === 'number' ? v.toLocaleString(undefined, {maximumFractionDigits: 2}) : v}</td>`;
+        }
+      }
+      html += '</tr>';
+    }
+    html += '</tbody></table></div>';
+    if (pc.rows.length > maxRow) {
+      html += `<p style="padding:4px 8px;color:#888;font-size:12px">Showing first ${maxRow} rows</p>`;
+    }
+  }
+
+  tableWrap.innerHTML = html;
+}
+</script>
+</body>
+</html>
