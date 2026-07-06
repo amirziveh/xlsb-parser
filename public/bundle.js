@@ -472,12 +472,9 @@ function unzipSync(data, opts) {
   return files;
 }
 
-// src/index.ts
+// src/record-stream.ts
 var dec16 = new TextDecoder("utf-16le");
 var dec8 = new TextDecoder("utf-8");
-function tick() {
-  return new Promise((r) => setTimeout(r, 0));
-}
 var BRT_ROW_HEADER = 0;
 var BRT_CELL_BLANK = 1;
 var BRT_CELL_RK = 2;
@@ -510,90 +507,6 @@ var ERRORS = {
   42: "#N/A",
   43: "#GETTING_DATA"
 };
-async function parseXlsb(data, onProgress) {
-  onProgress?.("Decompressing ZIP...", 0);
-  await new Promise((r) => setTimeout(r, 50));
-  const u82 = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
-  let zip;
-  try {
-    zip = unzipSync(u82);
-  } catch (e) {
-    throw new Error("ZIP decompression failed: " + (e?.message || e));
-  }
-  const out = {
-    sheets: [],
-    sharedStrings: [],
-    xmlFiles: {},
-    binaryDumps: [],
-    pivotCaches: [],
-    summary: { fileCount: 0, totalRecords: 0 }
-  };
-  const wb = zip["xl/workbook.bin"];
-  if (!wb) throw new Error("xl/workbook.bin not found");
-  onProgress?.("Parsing workbook...", 5);
-  const sheetNames = parseWorkbook(wb);
-  await tick();
-  if (zip["xl/sharedStrings.bin"]) {
-    onProgress?.("Parsing shared strings...", 10);
-    out.sharedStrings = parseSharedStrings(zip["xl/sharedStrings.bin"]);
-    await tick();
-  }
-  for (let i = 0; i < sheetNames.length; i++) {
-    const key = `xl/worksheets/sheet${i + 1}.bin`;
-    const sd = zip[key];
-    if (sd) {
-      onProgress?.(`Sheet "${sheetNames[i]}"...`, 15 + Math.round(i / sheetNames.length * 20));
-      const rows = parseSheet(sd, out.sharedStrings);
-      const totalCells = rows.reduce((a, r) => a + Object.keys(r.cols).length, 0);
-      out.sheets.push({ name: sheetNames[i], rows, totalCells });
-      await tick();
-    }
-  }
-  const pcd1 = zip["xl/pivotCache/pivotCacheDefinition1.bin"];
-  const pcd2 = zip["xl/pivotCache/pivotCacheDefinition2.bin"];
-  const pcr1 = zip["xl/pivotCache/pivotCacheRecords1.bin"];
-  const pcr2 = zip["xl/pivotCache/pivotCacheRecords2.bin"];
-  if (pcd1 && pcr1) {
-    onProgress?.("Pivot cache 1...", 33);
-    out.pivotCaches.push(parsePivotCache("PivotCache1", pcd1, pcr1));
-    await tick();
-  }
-  if (pcd2 && pcr2) {
-    onProgress?.("Pivot cache 2...", 34);
-    out.pivotCaches.push(parsePivotCache("PivotCache2", pcd2, pcr2));
-    await tick();
-  }
-  const binPaths = Object.keys(zip).filter((k) => k.endsWith(".bin")).sort();
-  const total = binPaths.length;
-  let doneBins = 0;
-  for (const path of binPaths) {
-    doneBins++;
-    const pct = 35 + Math.round(doneBins / total * 55);
-    onProgress?.(`${path.split("/").pop()}...`, pct);
-    const dump = dumpBinary(path, zip[path]);
-    out.binaryDumps.push(dump);
-    out.summary.fileCount++;
-    out.summary.totalRecords += dump.recCount;
-    await tick();
-  }
-  await tick();
-  const xmlPaths = Object.keys(zip).filter((k) => k.endsWith(".xml") || k.endsWith(".rels"));
-  for (let i = 0; i < xmlPaths.length; i++) {
-    const path = xmlPaths[i];
-    if (i % 5 === 0) {
-      onProgress?.(`XML files...`, 92 + Math.round(i / xmlPaths.length * 6));
-      await tick();
-    }
-    try {
-      out.xmlFiles[path] = dec8.decode(zip[path]);
-    } catch {
-    }
-  }
-  zip = null;
-  onProgress?.("Done", 100);
-  await tick();
-  return out;
-}
 function* records(data) {
   let off = 0;
   while (off < data.length) {
@@ -628,6 +541,9 @@ function* records(data) {
     off += s;
   }
 }
+function readU16(d, off) {
+  return d[off] | d[off + 1] << 8;
+}
 function readU32(d, off) {
   return (d[off] | d[off + 1] << 8 | d[off + 2] << 16 | d[off + 3] << 24) >>> 0;
 }
@@ -641,6 +557,9 @@ function readWideString(d, off) {
 function readRichString(d, off) {
   return readWideString(d, off + 1);
 }
+var RK_SCRATCH_BUF = new ArrayBuffer(8);
+var RK_SCRATCH_DV = new DataView(RK_SCRATCH_BUF);
+var RK_SCRATCH_U32 = new Uint32Array(RK_SCRATCH_BUF);
 function decodeRk(rk) {
   const fx100 = rk & 1;
   const fInt = rk >> 1 & 1;
@@ -649,9 +568,9 @@ function decodeRk(rk) {
   if (fInt) {
     val = num << 2 >> 2;
   } else {
-    const buf = new ArrayBuffer(8);
-    new DataView(buf).setBigUint64(0, BigInt(num) << 34n, true);
-    val = new DataView(buf).getFloat64(0, true);
+    RK_SCRATCH_U32[0] = 0;
+    RK_SCRATCH_U32[1] = num << 2;
+    val = RK_SCRATCH_DV.getFloat64(0, true);
   }
   if (fx100) val /= 100;
   return val;
@@ -659,6 +578,8 @@ function decodeRk(rk) {
 function hex(d, max2 = 48) {
   return Array.from(d.subarray(0, Math.min(max2, d.length))).map((b) => b.toString(16).padStart(2, "0")).join(" ");
 }
+
+// src/workbook.ts
 function parseWorkbook(data) {
   const names = [];
   for (const r of records(data)) {
@@ -674,6 +595,8 @@ function parseWorkbook(data) {
   }
   return names;
 }
+
+// src/shared-strings.ts
 function parseSharedStrings(data) {
   const list = [];
   for (const r of records(data)) {
@@ -681,6 +604,8 @@ function parseSharedStrings(data) {
   }
   return list;
 }
+
+// src/sheet.ts
 function parseSheet(data, ss) {
   const rows = [];
   let curRow = null;
@@ -780,12 +705,8 @@ function readShortCell(type, d, off, ss) {
       return null;
   }
 }
-function formatYMD(y, m, d) {
-  return String(y).padStart(4, "0") + "-" + String(m).padStart(2, "0") + "-" + String(d).padStart(2, "0");
-}
-function readU16(d, off) {
-  return d[off] | d[off + 1] << 8;
-}
+
+// src/dump.ts
 function dumpBinary(path, data, maxRec = 200) {
   const recordsArr = [];
   const typeSummary = {};
@@ -821,6 +742,11 @@ function dumpBinary(path, data, maxRec = 200) {
     recordsArr.push({ type: "...", typeNum: -1, size: 0, hex: `[${total - maxRec} more records omitted]`, strings: [] });
   }
   return { path, size: data.length, recCount: total, records: recordsArr, typeSummary };
+}
+
+// src/pivot-cache.ts
+function formatYMD(y, m, d) {
+  return String(y).padStart(4, "0") + "-" + String(m).padStart(2, "0") + "-" + String(d).padStart(2, "0");
 }
 function parsePivotCache(name, def, recs) {
   const fieldNames = [];
@@ -1083,6 +1009,95 @@ function parsePivotCache(name, def, recs) {
     if (lastPopulated + 1 < fieldNames.length) fieldNames.length = lastPopulated + 1;
   }
   return { name, fieldNames, rows, rowCount: recBodies.length > 50 ? recBodies.length : rows.length };
+}
+
+// src/index.ts
+function tick() {
+  return new Promise((r) => setTimeout(r, 0));
+}
+async function parseXlsb(data, onProgress) {
+  onProgress?.("Decompressing ZIP...", 0);
+  await new Promise((r) => setTimeout(r, 50));
+  const u82 = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
+  let zip;
+  try {
+    zip = unzipSync(u82);
+  } catch (e) {
+    throw new Error("ZIP decompression failed: " + (e?.message || e));
+  }
+  const out = {
+    sheets: [],
+    sharedStrings: [],
+    xmlFiles: {},
+    binaryDumps: [],
+    pivotCaches: [],
+    summary: { fileCount: 0, totalRecords: 0 }
+  };
+  const wb = zip["xl/workbook.bin"];
+  if (!wb) throw new Error("xl/workbook.bin not found");
+  onProgress?.("Parsing workbook...", 5);
+  const sheetNames = parseWorkbook(wb);
+  await tick();
+  if (zip["xl/sharedStrings.bin"]) {
+    onProgress?.("Parsing shared strings...", 10);
+    out.sharedStrings = parseSharedStrings(zip["xl/sharedStrings.bin"]);
+    await tick();
+  }
+  for (let i = 0; i < sheetNames.length; i++) {
+    const key = `xl/worksheets/sheet${i + 1}.bin`;
+    const sd = zip[key];
+    if (sd) {
+      onProgress?.(`Sheet "${sheetNames[i]}"...`, 15 + Math.round(i / sheetNames.length * 20));
+      const rows = parseSheet(sd, out.sharedStrings);
+      const totalCells = rows.reduce((a, r) => a + Object.keys(r.cols).length, 0);
+      out.sheets.push({ name: sheetNames[i], rows, totalCells });
+      await tick();
+    }
+  }
+  const pcd1 = zip["xl/pivotCache/pivotCacheDefinition1.bin"];
+  const pcd2 = zip["xl/pivotCache/pivotCacheDefinition2.bin"];
+  const pcr1 = zip["xl/pivotCache/pivotCacheRecords1.bin"];
+  const pcr2 = zip["xl/pivotCache/pivotCacheRecords2.bin"];
+  if (pcd1 && pcr1) {
+    onProgress?.("Pivot cache 1...", 33);
+    out.pivotCaches.push(parsePivotCache("PivotCache1", pcd1, pcr1));
+    await tick();
+  }
+  if (pcd2 && pcr2) {
+    onProgress?.("Pivot cache 2...", 34);
+    out.pivotCaches.push(parsePivotCache("PivotCache2", pcd2, pcr2));
+    await tick();
+  }
+  const binPaths = Object.keys(zip).filter((k) => k.endsWith(".bin")).sort();
+  const total = binPaths.length;
+  let doneBins = 0;
+  for (const path of binPaths) {
+    doneBins++;
+    const pct = 35 + Math.round(doneBins / total * 55);
+    onProgress?.(`${path.split("/").pop()}...`, pct);
+    const dump = dumpBinary(path, zip[path]);
+    out.binaryDumps.push(dump);
+    out.summary.fileCount++;
+    out.summary.totalRecords += dump.recCount;
+    await tick();
+  }
+  await tick();
+  const xmlPaths = Object.keys(zip).filter((k) => k.endsWith(".xml") || k.endsWith(".rels"));
+  for (let i = 0; i < xmlPaths.length; i++) {
+    const path = xmlPaths[i];
+    if (i % 5 === 0) {
+      onProgress?.(`XML files...`, 92 + Math.round(i / xmlPaths.length * 6));
+      await tick();
+    }
+    try {
+      out.xmlFiles[path] = dec8.decode(zip[path]);
+    } catch {
+    }
+  }
+  zip = null;
+  onProgress?.("Done", 100);
+  await tick();
+  return out;
 }
 export {
   parseXlsb
