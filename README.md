@@ -92,4 +92,4 @@ npm test         # run tests (vitest)
 
 ## License
 
-GPL-3.0
+MIT

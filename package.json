@@ -33,7 +33,7 @@
     "browser",
     "xlsx"
   ],
-  "license": "GPL-3.0",
+  "license": "MIT",
   "dependencies": {
     "fflate": "^0.8.2"
   },

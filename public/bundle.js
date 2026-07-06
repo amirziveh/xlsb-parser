@@ -597,15 +597,33 @@ async function parseXlsb(data, onProgress) {
 function* records(data) {
   let off = 0;
   while (off < data.length) {
+    const recStart = off;
+    if (off >= data.length) break;
     let t = data[off++];
-    if (t & 128) t = (t & 127) << 7 | data[off++];
+    if ((t & 128) !== 0) {
+      if (off >= data.length) {
+        throw new Error(
+          `Truncated .bin: record type byte at offset ${recStart} announces a second byte but only ${data.length} bytes total remain`
+        );
+      }
+      t = (t & 127) << 7 | data[off++];
+    }
     let s = 0, sh = 0, b;
     do {
+      if (off >= data.length) {
+        throw new Error(
+          `Truncated .bin: record at offset ${recStart} (type 0x${t.toString(16)}) declared size varint overruns the buffer`
+        );
+      }
       b = data[off++];
       s |= (b & 127) << sh;
       sh += 7;
     } while (b & 128);
-    if (off + s > data.length) s = data.length - off;
+    if (off + s > data.length) {
+      throw new Error(
+        `Truncated .bin: record at offset ${recStart} (type 0x${t.toString(16)}) declared size ${s} but only ${data.length - off} bytes remain`
+      );
+    }
     yield { type: t, data: data.subarray(off, off + s) };
     off += s;
   }
@@ -678,7 +696,7 @@ function parseSheet(data, ss) {
     if (!curRow) continue;
     if (r.type >= BRT_CELL_BLANK && r.type <= BRT_FMLA_ERROR) {
       const col = readU32(d, 0);
-      const ixf = d.length >= 6 ? d[4] | d[5] << 8 | (d[4] & 128 ? 4294901760 : 0) : void 0;
+      const ixf = d.length >= 6 ? d[4] | d[5] << 8 | (d[5] & 128 ? 4294901760 : 0) : void 0;
       const cell = readCell(r.type, d, 8, ss);
       if (cell) {
         cell.ixf = ixf;
@@ -693,7 +711,7 @@ function parseSheet(data, ss) {
         cell.ixf = ixf;
         curRow.cols[col] = cell;
       }
-      prevCol = col || 0;
+      prevCol = col;
     }
   }
   return rows;
@@ -703,24 +721,34 @@ function readCell(type, d, off, ss) {
     case BRT_CELL_BLANK:
       return { t: "blank" };
     case BRT_CELL_RK:
+      if (off + 4 > d.length) return null;
       return { t: "n", v: decodeRk(readU32(d, off)) };
     case BRT_CELL_REAL:
+      if (off + 8 > d.length) return null;
       return { t: "n", v: readF64(d, off) };
     case BRT_CELL_ISST:
+      if (off + 4 > d.length) return null;
       return { t: "s", v: ss[readU32(d, off)] ?? `[SST#${readU32(d, off)}]` };
     case BRT_CELL_BOOL:
+      if (off + 1 > d.length) return null;
       return { t: "b", v: d[off] !== 0 };
     case BRT_CELL_ERROR:
+      if (off + 1 > d.length) return null;
       return { t: "e", err: ERRORS[d[off]] ?? `#ERR(${d[off]})` };
     case BRT_CELL_ST:
+      if (off + 5 > d.length) return null;
       return { t: "s", v: readRichString(d, off) };
     case BRT_FMLA_NUM:
+      if (off + 8 > d.length) return null;
       return { t: "n", v: readF64(d, off) };
     case BRT_FMLA_STRING:
-      return { t: "s", v: d.length >= off + 6 ? readWideString(d, off) : "" };
+      if (off + 4 > d.length) return null;
+      return { t: "s", v: readWideString(d, off) };
     case BRT_FMLA_BOOL:
+      if (off + 1 > d.length) return null;
       return { t: "b", v: d[off] !== 0 };
     case BRT_FMLA_ERROR:
+      if (off + 1 > d.length) return null;
       return { t: "e", err: ERRORS[d[off]] ?? `#ERR(${d[off]})` };
     default:
       return null;
@@ -731,16 +759,22 @@ function readShortCell(type, d, off, ss) {
     case BRT_SHORT_BLANK:
       return { t: "blank" };
     case BRT_SHORT_RK:
+      if (off + 4 > d.length) return null;
       return { t: "n", v: decodeRk(readU32(d, off)) };
     case BRT_SHORT_ERROR:
+      if (off + 1 > d.length) return null;
       return { t: "e", err: ERRORS[d[off]] ?? `#ERR(${d[off]})` };
     case BRT_SHORT_BOOL:
+      if (off + 1 > d.length) return null;
       return { t: "b", v: d[off] !== 0 };
     case BRT_SHORT_REAL:
+      if (off + 8 > d.length) return null;
       return { t: "n", v: readF64(d, off) };
     case BRT_SHORT_ST:
+      if (off + 5 > d.length) return null;
       return { t: "s", v: readRichString(d, off) };
     case BRT_SHORT_ISST:
+      if (off + 4 > d.length) return null;
       return { t: "s", v: ss[readU32(d, off)] ?? `[SST#${readU32(d, off)}]` };
     default:
       return null;

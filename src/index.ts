@@ -188,11 +188,33 @@ export async function parseXlsb(
 function* records(data: Uint8Array): Generator<{ type: number; data: Uint8Array }> {
   let off = 0;
   while (off < data.length) {
+    const recStart = off;
+    if (off >= data.length) break;
     let t = data[off++];
-    if (t & 0x80) t = ((t & 0x7F) << 7) | data[off++];
+    if ((t & 0x80) !== 0) {
+      if (off >= data.length) {
+        throw new Error(
+          `Truncated .bin: record type byte at offset ${recStart} announces a second byte but only ${data.length} bytes total remain`,
+        );
+      }
+      t = ((t & 0x7F) << 7) | data[off++];
+    }
     let s = 0, sh = 0, b: number;
-    do { b = data[off++]; s |= (b & 0x7F) << sh; sh += 7; } while (b & 0x80);
-    if (off + s > data.length) s = data.length - off;
+    do {
+      if (off >= data.length) {
+        throw new Error(
+          `Truncated .bin: record at offset ${recStart} (type 0x${t.toString(16)}) declared size varint overruns the buffer`,
+        );
+      }
+      b = data[off++];
+      s |= (b & 0x7F) << sh;
+      sh += 7;
+    } while (b & 0x80);
+    if (off + s > data.length) {
+      throw new Error(
+        `Truncated .bin: record at offset ${recStart} (type 0x${t.toString(16)}) declared size ${s} but only ${data.length - off} bytes remain`,
+      );
+    }
     yield { type: t, data: data.subarray(off, off + s) };
     off += s;
   }
@@ -283,7 +305,7 @@ function parseSheet(data: Uint8Array, ss: string[]): ParsedRow[] {
 
     if (r.type >= BRT_CELL_BLANK && r.type <= BRT_FMLA_ERROR) {
       const col = readU32(d, 0);
-      const ixf = d.length >= 6 ? (d[4] | (d[5] << 8)) | (d[4] & 0x80 ? 0xFFFF0000 : 0) : undefined;
+      const ixf = d.length >= 6 ? (d[4] | (d[5] << 8)) | (d[5] & 0x80 ? 0xFFFF0000 : 0) : undefined;
       const cell = readCell(r.type, d, 8, ss);
       if (cell) { cell.ixf = ixf; curRow.cols[col] = cell; }
       prevCol = col;
@@ -292,7 +314,7 @@ function parseSheet(data: Uint8Array, ss: string[]): ParsedRow[] {
       const ixf = d.length >= 4 ? readU16(d, 2) : undefined;
       const cell = readShortCell(r.type, d, 4, ss);
       if (cell) { cell.ixf = ixf; curRow.cols[col] = cell; }
-      prevCol = col || 0;
+      prevCol = col;
     }
   }
   return rows;
@@ -301,16 +323,37 @@ function parseSheet(data: Uint8Array, ss: string[]): ParsedRow[] {
 function readCell(type: number, d: Uint8Array, off: number, ss: string[]): Cell | null {
   switch (type) {
     case BRT_CELL_BLANK: return { t: 'blank' };
-    case BRT_CELL_RK: return { t: 'n', v: decodeRk(readU32(d, off)) };
-    case BRT_CELL_REAL: return { t: 'n', v: readF64(d, off) };
-    case BRT_CELL_ISST: return { t: 's', v: ss[readU32(d, off)] ?? `[SST#${readU32(d, off)}]` };
-    case BRT_CELL_BOOL: return { t: 'b', v: d[off] !== 0 };
-    case BRT_CELL_ERROR: return { t: 'e', err: ERRORS[d[off]] ?? `#ERR(${d[off]})` };
-    case BRT_CELL_ST: return { t: 's', v: readRichString(d, off) };
-    case BRT_FMLA_NUM: return { t: 'n', v: readF64(d, off) };
-    case BRT_FMLA_STRING: return { t: 's', v: d.length >= off + 6 ? readWideString(d, off) : '' };
-    case BRT_FMLA_BOOL: return { t: 'b', v: d[off] !== 0 };
-    case BRT_FMLA_ERROR: return { t: 'e', err: ERRORS[d[off]] ?? `#ERR(${d[off]})` };
+    case BRT_CELL_RK:
+      if (off + 4 > d.length) return null;
+      return { t: 'n', v: decodeRk(readU32(d, off)) };
+    case BRT_CELL_REAL:
+      if (off + 8 > d.length) return null;
+      return { t: 'n', v: readF64(d, off) };
+    case BRT_CELL_ISST:
+      if (off + 4 > d.length) return null;
+      return { t: 's', v: ss[readU32(d, off)] ?? `[SST#${readU32(d, off)}]` };
+    case BRT_CELL_BOOL:
+      if (off + 1 > d.length) return null;
+      return { t: 'b', v: d[off] !== 0 };
+    case BRT_CELL_ERROR:
+      if (off + 1 > d.length) return null;
+      return { t: 'e', err: ERRORS[d[off]] ?? `#ERR(${d[off]})` };
+    case BRT_CELL_ST:
+      // BrtRichStr needs at least 1 flag + 4 cch bytes
+      if (off + 5 > d.length) return null;
+      return { t: 's', v: readRichString(d, off) };
+    case BRT_FMLA_NUM:
+      if (off + 8 > d.length) return null;
+      return { t: 'n', v: readF64(d, off) };
+    case BRT_FMLA_STRING:
+      if (off + 4 > d.length) return null;
+      return { t: 's', v: readWideString(d, off) };
+    case BRT_FMLA_BOOL:
+      if (off + 1 > d.length) return null;
+      return { t: 'b', v: d[off] !== 0 };
+    case BRT_FMLA_ERROR:
+      if (off + 1 > d.length) return null;
+      return { t: 'e', err: ERRORS[d[off]] ?? `#ERR(${d[off]})` };
     default: return null;
   }
 }
@@ -318,12 +361,24 @@ function readCell(type: number, d: Uint8Array, off: number, ss: string[]): Cell 
 function readShortCell(type: number, d: Uint8Array, off: number, ss: string[]): Cell | null {
   switch (type) {
     case BRT_SHORT_BLANK: return { t: 'blank' };
-    case BRT_SHORT_RK: return { t: 'n', v: decodeRk(readU32(d, off)) };
-    case BRT_SHORT_ERROR: return { t: 'e', err: ERRORS[d[off]] ?? `#ERR(${d[off]})` };
-    case BRT_SHORT_BOOL: return { t: 'b', v: d[off] !== 0 };
-    case BRT_SHORT_REAL: return { t: 'n', v: readF64(d, off) };
-    case BRT_SHORT_ST: return { t: 's', v: readRichString(d, off) };
-    case BRT_SHORT_ISST: return { t: 's', v: ss[readU32(d, off)] ?? `[SST#${readU32(d, off)}]` };
+    case BRT_SHORT_RK:
+      if (off + 4 > d.length) return null;
+      return { t: 'n', v: decodeRk(readU32(d, off)) };
+    case BRT_SHORT_ERROR:
+      if (off + 1 > d.length) return null;
+      return { t: 'e', err: ERRORS[d[off]] ?? `#ERR(${d[off]})` };
+    case BRT_SHORT_BOOL:
+      if (off + 1 > d.length) return null;
+      return { t: 'b', v: d[off] !== 0 };
+    case BRT_SHORT_REAL:
+      if (off + 8 > d.length) return null;
+      return { t: 'n', v: readF64(d, off) };
+    case BRT_SHORT_ST:
+      if (off + 5 > d.length) return null;
+      return { t: 's', v: readRichString(d, off) };
+    case BRT_SHORT_ISST:
+      if (off + 4 > d.length) return null;
+      return { t: 's', v: ss[readU32(d, off)] ?? `[SST#${readU32(d, off)}]` };
     default: return null;
   }
 }
