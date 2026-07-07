@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { parseXlsb } from '../src/index.js';
-import { buildXlsb, rec, u32, u16le, concat } from './helpers';
+import {
+  buildXlsb, rec, u32, u16le, concat, pcdFieldFull, pcdStr, pcdDate, pcdNum,
+  pcRecordsHeader, pcRecordsEnd,
+} from './helpers';
 
 // Minimal pivot-cache fixtures. The current pivot-cache decoder is heuristic
 // (P5 of the roadmap will rewrite it spec-first), so these tests only lock
@@ -106,6 +109,60 @@ describe('pivot cache parsing', () => {
     expect(wb.pivotCaches[1].name).toBe('PivotCache2');
   });
 
+  it('parses 5+ pivot caches (not hardcoded to 2 — regression for audit §2.7)', async () => {
+    const extras: Record<string, Uint8Array> = {};
+    for (let i = 1; i <= 5; i++) {
+      extras[`xl/pivotCache/pivotCacheDefinition${i}.bin`] = pivotFieldRecordFixed('F' + i);
+      extras[`xl/pivotCache/pivotCacheRecords${i}.bin`] = concat(
+        pivotRecordU32(i),
+        rec(0x2101, new Uint8Array(0)),
+      );
+    }
+    const xlsb = buildXlsb({
+      sheetNames: ['S'],
+      sharedStrings: [],
+      sheetRecords: [],
+      extraEntries: extras,
+    });
+    const wb = await parseXlsb(xlsb, { parsePivotCaches: true });
+    expect(wb.pivotCaches.length).toBe(5);
+    expect(wb.pivotCaches.map(p => p.name)).toEqual([
+      'PivotCache1', 'PivotCache2', 'PivotCache3', 'PivotCache4', 'PivotCache5',
+    ]);
+  });
+
+  it('parses non-contiguous cache numbers (1 and 5, but not 2/3/4)', async () => {
+    const xlsb = buildXlsb({
+      sheetNames: ['S'],
+      sharedStrings: [],
+      sheetRecords: [],
+      extraEntries: {
+        'xl/pivotCache/pivotCacheDefinition1.bin': pivotFieldRecordFixed('A'),
+        'xl/pivotCache/pivotCacheRecords1.bin': concat(pivotRecordU32(1), rec(0x2101, new Uint8Array(0))),
+        'xl/pivotCache/pivotCacheDefinition5.bin': pivotFieldRecordFixed('E'),
+        'xl/pivotCache/pivotCacheRecords5.bin': concat(pivotRecordU32(5), rec(0x2101, new Uint8Array(0))),
+      },
+    });
+    const wb = await parseXlsb(xlsb, { parsePivotCaches: true });
+    expect(wb.pivotCaches.length).toBe(2);
+    expect(wb.pivotCaches[0].name).toBe('PivotCache1');
+    expect(wb.pivotCaches[1].name).toBe('PivotCache5');
+  });
+
+  it('skips a pivotCacheDefinition without a matching records part', async () => {
+    const xlsb = buildXlsb({
+      sheetNames: ['S'],
+      sharedStrings: [],
+      sheetRecords: [],
+      extraEntries: {
+        'xl/pivotCache/pivotCacheDefinition1.bin': pivotFieldRecordFixed('Orphan'),
+        // intentionally no pivotCacheRecords1.bin
+      },
+    });
+    const wb = await parseXlsb(xlsb, { parsePivotCaches: true });
+    expect(wb.pivotCaches).toEqual([]);
+  });
+
   it('returns an empty pivotCaches array when no caches are present', async () => {
     const xlsb = buildXlsb({
       sheetNames: ['S'],
@@ -117,5 +174,33 @@ describe('pivot cache parsing', () => {
     // Also true even when opt-in is set: no caches in the file.
     const wb2 = await parseXlsb(xlsb, { parsePivotCaches: true });
     expect(wb2.pivotCaches).toEqual([]);
+  });
+});
+
+describe('pivot cache field descriptors', () => {
+  function buildPc(name: string, def: Uint8Array, recs: Uint8Array) {
+    return buildXlsb({
+      sheetNames: ['S'], sharedStrings: [], sheetRecords: [],
+      extraEntries: {
+        [`xl/pivotCache/pivotCacheDefinition${name}.bin`]: def,
+        [`xl/pivotCache/pivotCacheRecords${name}.bin`]: recs,
+      },
+    });
+  }
+
+  it('reads fNumField/fDateInField/fHasTextItem into field.kind', async () => {
+    const def = concat(
+      pcdFieldFull('Region', { isSrc: true, fText: true }),
+      pcdStr('North'), pcdStr('South'),
+      pcdFieldFull('Amount', { isSrc: true, fNum: true }),
+      pcdFieldFull('When', { isSrc: true, fDate: true }),
+      pcdDate(2024, 5, 10, 13, 30, 0),
+    );
+    const recs = concat(pcRecordsHeader(0), pcRecordsEnd());
+    const wb = await parseXlsb(buildPc('1', def, recs), { parsePivotCaches: true });
+    const pc = wb.pivotCaches[0];
+    expect(pc.fields.map(f => f.kind)).toEqual(['indexed', 'number', 'date']);
+    expect(pc.fields[0].sharedItems.map(c => (c as { v: unknown })?.v)).toEqual(['North', 'South']);
+    expect(pc.fields[0].isSrc).toBe(true);
   });
 });
