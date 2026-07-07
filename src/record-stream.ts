@@ -34,6 +34,24 @@ export const BRT_SST_ITEM = 0x13;
 export const BRT_BUNDLE_SH = 0x9c;
 export const BRT_BUNDLE_SH_NEW = 0x0e01;
 
+// Pivot cache record types (MS-XLSB §2.4 / §2.1.7.38, §2.1.7.39). Verified
+// against real Excel .xlsb outputs.
+export const BRT_BEGIN_PCD_FIELD = 0x1b81;
+export const BRT_BEGIN_PCD_ATBL = 0x1e81;
+export const BRT_BEGIN_PCDIRUN = 0x1f81;
+export const BRT_PCDI_STRING = 0x0018;
+export const BRT_PCDI_STRING2 = 0x001f;
+export const BRT_PCDIDATETIME = 0x0020;
+export const BRT_PCDINUMBER = 0x0015;
+export const BRT_PCDIBOOLEAN = 0x0016;
+export const BRT_PCDIERROR = 0x0017;
+export const BRT_PCDIMISSING = 0x0014;
+export const BRT_PCDIINDEX = 0x001a;
+export const BRT_BEGIN_PIVOT_CACHE_RECORDS = 0x2081;
+export const BRT_PC_RECORD = 0x0021;
+export const BRT_PC_RECORD_DT = 0x0022;
+export const BRT_END_PIVOT_CACHE_RECORDS = 0x2101;
+
 // Excel error codes — MS-OFFBFISO §2.5.97 (BrtErr)
 export const ERRORS: Record<number, string> = {
   0x00: '#NULL!',
