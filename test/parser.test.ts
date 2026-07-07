@@ -100,10 +100,18 @@ describe('progress callback', () => {
 });
 
 describe('summary', () => {
-  it('reports file and record counts', async () => {
+  it('reports file and record counts when dumpBinaries is opt-in', async () => {
+    const xlsb = makeMinimalXlsb();
+    const wb = await parseXlsb(xlsb, { dumpBinaries: true });
+    expect(wb.summary.fileCount).toBeGreaterThan(0);
+    expect(wb.summary.totalRecords).toBeGreaterThan(0);
+  });
+
+  it('counts .bin files in summary.fileCount even without dumpBinaries', async () => {
     const xlsb = makeMinimalXlsb();
     const wb = await parseXlsb(xlsb);
     expect(wb.summary.fileCount).toBeGreaterThan(0);
-    expect(wb.summary.totalRecords).toBeGreaterThan(0);
+    // totalRecords is 0 because dumpBinaries is now opt-in (P4)
+    expect(wb.summary.totalRecords).toBe(0);
   });
 });

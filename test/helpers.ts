@@ -182,6 +182,44 @@ export function makeMinimalXlsb(): Uint8Array {
   });
 }
 
+// ---- styles.bin builder ----
+// Builds a minimal xl/styles.bin with one cellXfs entry whose numFmtId is set.
+// BrtFmt (0x02D9) records (custom formats) precede BrtCellXF (0x01F9) records.
+// BrtFmt data: uint16 numFmtId + uint32 fmtStrLen + UTF-16LE chars.
+// BrtCellXF data: uint16 numFmtId at byte 0 (+ more bytes we don't care about).
+export function stylesBinRecord(opts: {
+  cellXfs?: number[];                // numFmtId for each cellXfs entry
+  customFmts?: Record<number, string>; // numFmtId → format string
+}): Uint8Array {
+  const parts: Uint8Array[] = [];
+  // Custom formats
+  if (opts.customFmts) {
+    for (const [idStr, fmt] of Object.entries(opts.customFmts)) {
+      const id = Number(idStr);
+      parts.push(rec(0x02D9, concat(
+        new Uint8Array([id & 0xFF, (id >> 8) & 0xFF]),  // uint16 numFmtId
+        u32(fmt.length),
+        u16le(fmt),
+      )));
+    }
+  }
+  // cellXfs — one BrtCellXF per entry, numFmtId at byte 0
+  if (opts.cellXfs) {
+    for (const numFmtId of opts.cellXfs) {
+      // Pad to 4 bytes minimum (BrtCellXF has more fields but we only set
+      // the numFmtId; the rest are zero):
+      parts.push(rec(0x01F9, new Uint8Array([numFmtId & 0xFF, (numFmtId >> 8) & 0xFF, 0, 0])));
+    }
+  }
+  return concat(...parts);
+}
+
+// Build a cell with explicit iStyleRef bytes (so it points to a specific
+// cellXfs entry in our synthesized styles table).
+export function cellRealWithStyle(col: number, val: number, styleLo: number, styleHi: number): Uint8Array {
+  return rec(0x05, concat(u32(col), new Uint8Array([styleLo, styleHi, 0, 0]), f64(val)));
+}
+
 // ---- comprehensive cell builders (long form: 4 col + 2 iStyleRef + 2 reserved + value) ----
 // Cell record opcodes per MS-XLSB §2.4
 const BRT_CELL_RK_OP = 0x02;

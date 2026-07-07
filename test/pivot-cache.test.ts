@@ -37,7 +37,7 @@ describe('pivot cache parsing', () => {
         'xl/pivotCache/pivotCacheRecords1.bin': recs,
       },
     });
-    const wb = await parseXlsb(xlsb);
+    const wb = await parseXlsb(xlsb, { parsePivotCaches: true });
     expect(wb.pivotCaches.length).toBe(1);
     expect(wb.pivotCaches[0].name).toBe('PivotCache1');
     expect(wb.pivotCaches[0].fieldNames).toContain('Region');
@@ -59,7 +59,7 @@ describe('pivot cache parsing', () => {
         'xl/pivotCache/pivotCacheRecords1.bin': recs,
       },
     });
-    const wb = await parseXlsb(xlsb);
+    const wb = await parseXlsb(xlsb, { parsePivotCaches: true });
     expect(wb.pivotCaches[0].rowCount).toBeGreaterThan(0);
   });
 
@@ -80,7 +80,7 @@ describe('pivot cache parsing', () => {
         'xl/pivotCache/pivotCacheRecords1.bin': recs,
       },
     });
-    const wb = await parseXlsb(xlsb);
+    const wb = await parseXlsb(xlsb, { parsePivotCaches: true });
     expect(wb.pivotCaches[0].rows.length).toBe(1);
   });
 
@@ -101,7 +101,7 @@ describe('pivot cache parsing', () => {
         'xl/pivotCache/pivotCacheRecords2.bin': recs2,
       },
     });
-    const wb = await parseXlsb(xlsb);
+    const wb = await parseXlsb(xlsb, { parsePivotCaches: true });
     expect(wb.pivotCaches.length).toBe(2);
     expect(wb.pivotCaches[0].name).toBe('PivotCache1');
     expect(wb.pivotCaches[1].name).toBe('PivotCache2');
@@ -115,5 +115,8 @@ describe('pivot cache parsing', () => {
     });
     const wb = await parseXlsb(xlsb);
     expect(wb.pivotCaches).toEqual([]);
+    // Also true even when opt-in is set: no caches in the file.
+    const wb2 = await parseXlsb(xlsb, { parsePivotCaches: true });
+    expect(wb2.pivotCaches).toEqual([]);
   });
 });
