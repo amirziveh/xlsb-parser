@@ -30,6 +30,14 @@ export interface Cell {
   dateValue?: string;
 }
 
+export type PivotCacheCell =
+  | { t: 's'; v: string }
+  | { t: 'n'; v: number }
+  | { t: 'd'; v: string; serial?: number }
+  | { t: 'b'; v: boolean }
+  | { t: 'e'; v: string }
+  | { t: 'blank' };
+
 export interface ParsedRow {
   row: number;
   cols: Record<number, Cell>;
@@ -57,11 +65,23 @@ export interface BinaryDump {
   typeSummary: Record<string, number>;
 }
 
+export type PivotCacheFieldKind =
+  | 'indexed' | 'number' | 'date' | 'string' | 'boolean' | 'error' | 'blank';
+
+export interface PivotCacheField {
+  name: string;
+  isSrc: boolean;
+  kind: PivotCacheFieldKind;
+  sharedItems: (PivotCacheCell | null)[];
+}
+
 export interface PivotCacheTable {
   name: string;
   fieldNames: string[];
-  rows: (string | number | null)[][];
+  fields: PivotCacheField[];
+  rows: PivotCacheCell[][];
   rowCount: number;
+  recordCount: number;
 }
 
 export interface ParsedXlsb {
