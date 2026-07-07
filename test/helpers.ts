@@ -3,7 +3,7 @@ import { zipSync, type ZipInput } from 'fflate';
 // ---- primitive encoders ----
 
 export function u32(v: number): Uint8Array {
-  return new Uint8Array([v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF, (v >> 24) & 0xFF]);
+  return new Uint8Array([v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >> 24) & 0xff]);
 }
 
 export function u16le(s: string): Uint8Array {
@@ -22,13 +22,16 @@ export function f64(v: number): Uint8Array {
 // Record type encoding: ((b1 & 0x7F) << 7) | b2 for types >= 128
 export function encType(v: number): Uint8Array {
   if (v < 128) return new Uint8Array([v]);
-  return new Uint8Array([((v >> 7) & 0x7F) | 0x80, v & 0x7F]);
+  return new Uint8Array([((v >> 7) & 0x7f) | 0x80, v & 0x7f]);
 }
 
 // Record size: standard 7-bit varint
 export function encSize(v: number): Uint8Array {
   const bytes: number[] = [];
-  do { bytes.push((v & 0x7F) | (v > 0x7F ? 0x80 : 0)); v >>>= 7; } while (v > 0);
+  do {
+    bytes.push((v & 0x7f) | (v > 0x7f ? 0x80 : 0));
+    v >>>= 7;
+  } while (v > 0);
   return new Uint8Array(bytes);
 }
 
@@ -46,7 +49,10 @@ export function concat(...parts: Uint8Array[]): Uint8Array {
   const total = parts.reduce((s, p) => s + p.length, 0);
   const out = new Uint8Array(total);
   let off = 0;
-  for (const p of parts) { out.set(p, off); off += p.length; }
+  for (const p of parts) {
+    out.set(p, off);
+    off += p.length;
+  }
   return out;
 }
 
@@ -65,7 +71,12 @@ export function cellBlank(col: number): Uint8Array {
 }
 
 // Variant with explicit iStyleRef bytes (low, high) at offsets 4..5
-export function cellRealStyled(col: number, val: number, styleLo: number, styleHi: number): Uint8Array {
+export function cellRealStyled(
+  col: number,
+  val: number,
+  styleLo: number,
+  styleHi: number,
+): Uint8Array {
   return rec(0x05, concat(u32(col), new Uint8Array([styleLo, styleHi, 0, 0]), f64(val)));
 }
 
@@ -85,14 +96,19 @@ export function workbookBinRecord(sheetNames: string[]): Uint8Array {
   const parts: Uint8Array[] = [];
   sheetNames.forEach((name, i) => {
     const rId = `rId${i + 1}`;
-    parts.push(rec(0x0E01, concat(
-      u32(i + 1),                    // iTabID
-      new Uint8Array([0, 0, 0, 0]),  // fHidden + reserved
-      u32(rId.length),               // iStMeta
-      u16le(rId),                    // rId
-      u32(name.length),              // nameLen
-      u16le(name),                   // name
-    )));
+    parts.push(
+      rec(
+        0x0e01,
+        concat(
+          u32(i + 1), // iTabID
+          new Uint8Array([0, 0, 0, 0]), // fHidden + reserved
+          u32(rId.length), // iStMeta
+          u16le(rId), // rId
+          u32(name.length), // nameLen
+          u16le(name), // name
+        ),
+      ),
+    );
   });
   return concat(...parts);
 }
@@ -101,52 +117,59 @@ export function workbookBinRecord(sheetNames: string[]): Uint8Array {
 
 export interface XlsbParts {
   sheetNames: string[];
-  sheetRecords: Uint8Array[];      // one per sheet
+  sheetRecords: Uint8Array[]; // one per sheet
   sharedStrings: string[];
   extraEntries?: Record<string, Uint8Array>;
-  workbookBin?: Uint8Array;        // override the default workbook record
+  workbookBin?: Uint8Array; // override the default workbook record
 }
 
 export function buildXlsb(parts: XlsbParts): Uint8Array {
   const text = (s: string) => new TextEncoder().encode(s);
 
-  const overrides = parts.sheetNames.map((_, i) =>
-    `<Override PartName="/xl/worksheets/sheet${i + 1}.bin" ContentType="application/vnd.ms-excel.worksheet.binary"/>`,
-  ).join('');
+  const overrides = parts.sheetNames
+    .map(
+      (_, i) =>
+        `<Override PartName="/xl/worksheets/sheet${i + 1}.bin" ContentType="application/vnd.ms-excel.worksheet.binary"/>`,
+    )
+    .join('');
 
   const contentTypes = text(
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-    + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-    + '<Default Extension="bin" ContentType="application/vnd.ms-excel.binaryIndex"/>'
-    + '<Override PartName="/xl/workbook.bin" ContentType="application/vnd.ms-excel.sheet.binary.macroEnabled.main"/>'
-    + overrides
-    + '<Override PartName="/xl/styles.bin" ContentType="application/vnd.ms-excel.styles.binary"/>'
-    + '</Types>',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="bin" ContentType="application/vnd.ms-excel.binaryIndex"/>' +
+      '<Override PartName="/xl/workbook.bin" ContentType="application/vnd.ms-excel.sheet.binary.macroEnabled.main"/>' +
+      overrides +
+      '<Override PartName="/xl/styles.bin" ContentType="application/vnd.ms-excel.styles.binary"/>' +
+      '</Types>',
   );
 
   const relsRoot = text(
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-    + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.bin"/>'
-    + '</Relationships>',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.bin"/>' +
+      '</Relationships>',
   );
 
-  const sheetRels = parts.sheetNames.map((_, i) =>
-    `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.bin"/>`,
-  ).join('');
+  const sheetRels = parts.sheetNames
+    .map(
+      (_, i) =>
+        `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.bin"/>`,
+    )
+    .join('');
   const relsWb = text(
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-    + sheetRels
-    + '<Relationship Id="rId100" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.bin"/>'
-    + '</Relationships>',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      sheetRels +
+      '<Relationship Id="rId100" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.bin"/>' +
+      '</Relationships>',
   );
 
   const wbRec = parts.workbookBin ?? workbookBinRecord(parts.sheetNames);
   const stylesRec = rec(0x0000, new Uint8Array(0));
-  const ssRecs = parts.sharedStrings.length > 0
-    ? concat(...parts.sharedStrings.map(sstItemPlain))
-    : new Uint8Array(0);
+  const ssRecs =
+    parts.sharedStrings.length > 0
+      ? concat(...parts.sharedStrings.map(sstItemPlain))
+      : new Uint8Array(0);
 
   const zipInput: ZipInput = {
     '[Content_Types].xml': [contentTypes, { level: 0 }],
@@ -174,11 +197,19 @@ export function makeMinimalXlsb(): Uint8Array {
   return buildXlsb({
     sheetNames: ['Sheet1'],
     sharedStrings: ['Name', 'Value', 'foo', 'bar'],
-    sheetRecords: [concat(
-      rowHeader(0), cellIsst(0, 0), cellIsst(1, 1),
-      rowHeader(1), cellIsst(0, 2), cellReal(1, 42.5),
-      rowHeader(2), cellIsst(0, 3), cellBlank(1),
-    )],
+    sheetRecords: [
+      concat(
+        rowHeader(0),
+        cellIsst(0, 0),
+        cellIsst(1, 1),
+        rowHeader(1),
+        cellIsst(0, 2),
+        cellReal(1, 42.5),
+        rowHeader(2),
+        cellIsst(0, 3),
+        cellBlank(1),
+      ),
+    ],
   });
 }
 
@@ -188,7 +219,7 @@ export function makeMinimalXlsb(): Uint8Array {
 // BrtFmt data: uint16 numFmtId + uint32 fmtStrLen + UTF-16LE chars.
 // BrtCellXF data: uint16 numFmtId at byte 0 (+ more bytes we don't care about).
 export function stylesBinRecord(opts: {
-  cellXfs?: number[];                // numFmtId for each cellXfs entry
+  cellXfs?: number[]; // numFmtId for each cellXfs entry
   customFmts?: Record<number, string>; // numFmtId → format string
 }): Uint8Array {
   const parts: Uint8Array[] = [];
@@ -196,11 +227,16 @@ export function stylesBinRecord(opts: {
   if (opts.customFmts) {
     for (const [idStr, fmt] of Object.entries(opts.customFmts)) {
       const id = Number(idStr);
-      parts.push(rec(0x02D9, concat(
-        new Uint8Array([id & 0xFF, (id >> 8) & 0xFF]),  // uint16 numFmtId
-        u32(fmt.length),
-        u16le(fmt),
-      )));
+      parts.push(
+        rec(
+          0x02d9,
+          concat(
+            new Uint8Array([id & 0xff, (id >> 8) & 0xff]), // uint16 numFmtId
+            u32(fmt.length),
+            u16le(fmt),
+          ),
+        ),
+      );
     }
   }
   // cellXfs — one BrtCellXF per entry, numFmtId at byte 0
@@ -208,7 +244,7 @@ export function stylesBinRecord(opts: {
     for (const numFmtId of opts.cellXfs) {
       // Pad to 4 bytes minimum (BrtCellXF has more fields but we only set
       // the numFmtId; the rest are zero):
-      parts.push(rec(0x01F9, new Uint8Array([numFmtId & 0xFF, (numFmtId >> 8) & 0xFF, 0, 0])));
+      parts.push(rec(0x01f9, new Uint8Array([numFmtId & 0xff, (numFmtId >> 8) & 0xff, 0, 0])));
     }
   }
   return concat(...parts);
@@ -216,7 +252,12 @@ export function stylesBinRecord(opts: {
 
 // Build a cell with explicit iStyleRef bytes (so it points to a specific
 // cellXfs entry in our synthesized styles table).
-export function cellRealWithStyle(col: number, val: number, styleLo: number, styleHi: number): Uint8Array {
+export function cellRealWithStyle(
+  col: number,
+  val: number,
+  styleLo: number,
+  styleHi: number,
+): Uint8Array {
   return rec(0x05, concat(u32(col), new Uint8Array([styleLo, styleHi, 0, 0]), f64(val)));
 }
 
@@ -228,8 +269,8 @@ const BRT_CELL_BOOL_OP = 0x04;
 const BRT_CELL_ST_OP = 0x06;
 const BRT_FMLA_STRING_OP = 0x08;
 const BRT_FMLA_NUM_OP = 0x09;
-const BRT_FMLA_BOOL_OP = 0x0A;
-const BRT_FMLA_ERROR_OP = 0x0B;
+const BRT_FMLA_BOOL_OP = 0x0a;
+const BRT_FMLA_ERROR_OP = 0x0b;
 
 // Build a long-form cell with explicit type, col and value bytes
 export function cellLong(op: number, col: number, valueBytes: Uint8Array): Uint8Array {
@@ -272,10 +313,10 @@ export function cellFmlaError(col: number, errCode: number): Uint8Array {
 // Short records: implicit col=prevCol+1, 2 bytes (unknown) + 2 bytes iStyleRef + value.
 // Code reads: ixf = readU16(d, 2); readShortCell(r.type, d, 4, ss); so the value
 // starts at offset 4. The leading 4 bytes are 2 unknown + 2 iStyleRef.
-const BRT_SHORT_BLANK_OP = 0x0C;
-const BRT_SHORT_RK_OP = 0x0D;
-const BRT_SHORT_ERROR_OP = 0x0E;
-const BRT_SHORT_BOOL_OP = 0x0F;
+const BRT_SHORT_BLANK_OP = 0x0c;
+const BRT_SHORT_RK_OP = 0x0d;
+const BRT_SHORT_ERROR_OP = 0x0e;
+const BRT_SHORT_BOOL_OP = 0x0f;
 const BRT_SHORT_REAL_OP = 0x10;
 const BRT_SHORT_ST_OP = 0x11;
 const BRT_SHORT_ISST_OP = 0x12;
@@ -286,15 +327,27 @@ function shortRec(op: number, valueBytes: Uint8Array = new Uint8Array(0)): Uint8
   return rec(op, concat(new Uint8Array(4), valueBytes));
 }
 
-export function shortBlank(): Uint8Array { return shortRec(BRT_SHORT_BLANK_OP); }
-export function shortRk(rkU32: number): Uint8Array { return shortRec(BRT_SHORT_RK_OP, u32(rkU32)); }
-export function shortError(errCode: number): Uint8Array { return shortRec(BRT_SHORT_ERROR_OP, new Uint8Array([errCode])); }
-export function shortBool(v: boolean): Uint8Array { return shortRec(BRT_SHORT_BOOL_OP, new Uint8Array([v ? 1 : 0])); }
-export function shortReal(v: number): Uint8Array { return shortRec(BRT_SHORT_REAL_OP, f64(v)); }
+export function shortBlank(): Uint8Array {
+  return shortRec(BRT_SHORT_BLANK_OP);
+}
+export function shortRk(rkU32: number): Uint8Array {
+  return shortRec(BRT_SHORT_RK_OP, u32(rkU32));
+}
+export function shortError(errCode: number): Uint8Array {
+  return shortRec(BRT_SHORT_ERROR_OP, new Uint8Array([errCode]));
+}
+export function shortBool(v: boolean): Uint8Array {
+  return shortRec(BRT_SHORT_BOOL_OP, new Uint8Array([v ? 1 : 0]));
+}
+export function shortReal(v: number): Uint8Array {
+  return shortRec(BRT_SHORT_REAL_OP, f64(v));
+}
 export function shortString(s: string): Uint8Array {
   return shortRec(BRT_SHORT_ST_OP, concat(new Uint8Array([0]), u32(s.length), u16le(s)));
 }
-export function shortIsst(sstIdx: number): Uint8Array { return shortRec(BRT_SHORT_ISST_OP, u32(sstIdx)); }
+export function shortIsst(sstIdx: number): Uint8Array {
+  return shortRec(BRT_SHORT_ISST_OP, u32(sstIdx));
+}
 
 // ---- rich-text SST item ----
 // BrtRichStr (MS-XLSB §2.5.31):
@@ -308,17 +361,20 @@ export function sstItemRich(s: string): Uint8Array {
   // flags = 0x08 means fRt=1 (rich formatting), but we emit 0 runs.
   // This exercises the code path where runs ARE present but text reads
   // identically to the no-runs form.
-  return rec(0x13, concat(
-    new Uint8Array([0x08]),       // fRt=1
-    u32(s.length),
-    u16le(s),
-    u32(0),                        // cRun = 0
-  ));
+  return rec(
+    0x13,
+    concat(
+      new Uint8Array([0x08]), // fRt=1
+      u32(s.length),
+      u16le(s),
+      u32(0), // cRun = 0
+    ),
+  );
 }
 
 // Build SST bytes from a mixed list of plain/rich string specs
 export function sstBytes(items: { s: string; rich?: boolean }[]): Uint8Array {
-  return concat(...items.map(it => it.rich ? sstItemRich(it.s) : sstItemPlain(it.s)));
+  return concat(...items.map((it) => (it.rich ? sstItemRich(it.s) : sstItemPlain(it.s))));
 }
 
 // ---- legacy workbook form (BRT_BUNDLE_SH = 0x9C) ----
@@ -328,15 +384,19 @@ export function workbookBinRecordLegacy(sheetNames: string[]): Uint8Array {
   const parts: Uint8Array[] = [];
   sheetNames.forEach((name, i) => {
     const rId = `rId${i + 1}`;
-    parts.push(rec(0x9C, concat(
-      u32(i + 1),                       // iTabID (4 bytes, offset 0..3)
-      new Uint8Array([0]),              // fHidden (1 byte, offset 4)
-      u32(rId.length),                 // iStMeta (4 bytes, offset 5..8)
-      u16le(rId),                       // rId chars (offset 9..)
-      u32(name.length),
-      u16le(name),
-    )));
+    parts.push(
+      rec(
+        0x9c,
+        concat(
+          u32(i + 1), // iTabID (4 bytes, offset 0..3)
+          new Uint8Array([0]), // fHidden (1 byte, offset 4)
+          u32(rId.length), // iStMeta (4 bytes, offset 5..8)
+          u16le(rId), // rId chars (offset 9..)
+          u32(name.length),
+          u16le(name),
+        ),
+      ),
+    );
   });
   return concat(...parts);
 }
-

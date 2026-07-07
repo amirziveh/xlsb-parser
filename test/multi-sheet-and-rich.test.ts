@@ -1,10 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { parseXlsb } from '../src/index.js';
 import {
-  buildXlsb, rowHeader, concat, cellIsst, cellReal,
-  sstItemPlain, sstItemRich, sstBytes, workbookBinRecordLegacy,
+  buildXlsb,
+  rowHeader,
+  concat,
+  cellIsst,
+  cellReal,
+  sstBytes,
+  workbookBinRecordLegacy,
 } from './helpers';
-import { rec } from './helpers';
 
 // Multi-sheet: covers the per-sheet loop in index.ts and the
 // parseWorkbook multi-record walk.
@@ -20,7 +24,7 @@ describe('multi-sheet workbooks', () => {
       ],
     });
     const wb = await parseXlsb(xlsb);
-    expect(wb.sheets.map(s => s.name)).toEqual(['Alpha', 'Beta', 'Gamma']);
+    expect(wb.sheets.map((s) => s.name)).toEqual(['Alpha', 'Beta', 'Gamma']);
     expect(wb.sheets[0].rows[0].cols[0]?.v).toBe('a');
     expect(wb.sheets[2].rows[0].cols[0]?.v).toBe('c');
   });
@@ -31,10 +35,7 @@ describe('multi-sheet workbooks', () => {
     const xlsb = buildXlsb({
       sheetNames: ['Present', 'Empty'],
       sharedStrings: [],
-      sheetRecords: [
-        concat(rowHeader(0), cellReal(0, 1)),
-        new Uint8Array(0),
-      ],
+      sheetRecords: [concat(rowHeader(0), cellReal(0, 1)), new Uint8Array(0)],
     });
     const wb = await parseXlsb(xlsb);
     expect(wb.sheets.length).toBe(2);
@@ -45,10 +46,16 @@ describe('multi-sheet workbooks', () => {
     const xlsb = buildXlsb({
       sheetNames: ['S'],
       sharedStrings: [],
-      sheetRecords: [concat(
-        rowHeader(0), cellReal(0, 1), cellReal(1, 2), cellReal(2, 3),
-        rowHeader(1), cellReal(0, 4),
-      )],
+      sheetRecords: [
+        concat(
+          rowHeader(0),
+          cellReal(0, 1),
+          cellReal(1, 2),
+          cellReal(2, 3),
+          rowHeader(1),
+          cellReal(0, 4),
+        ),
+      ],
     });
     const wb = await parseXlsb(xlsb);
     expect(wb.sheets[0].totalCells).toBe(4);
@@ -64,14 +71,11 @@ describe('legacy workbook bundle record (BRT_BUNDLE_SH = 0x9C)', () => {
     const xlsb = buildXlsb({
       sheetNames,
       sharedStrings: [],
-      sheetRecords: [
-        concat(rowHeader(0), cellReal(0, 1)),
-        concat(rowHeader(0), cellReal(0, 2)),
-      ],
+      sheetRecords: [concat(rowHeader(0), cellReal(0, 1)), concat(rowHeader(0), cellReal(0, 2))],
       workbookBin: workbookBinRecordLegacy(sheetNames),
     });
     const wb = await parseXlsb(xlsb);
-    expect(wb.sheets.map(s => s.name)).toEqual(['Legacy1', 'Legacy2']);
+    expect(wb.sheets.map((s) => s.name)).toEqual(['Legacy1', 'Legacy2']);
   });
 });
 
@@ -89,7 +93,7 @@ describe('BrtRichStr with formatting runs (§2.5 audit verification)', () => {
     // still decode cleanly.
     const xlsb = buildXlsb({
       sheetNames: ['S'],
-      sharedStrings: [],  // we override the SST below via extraEntries? No —
+      sharedStrings: [], // we override the SST below via extraEntries? No —
       // buildXlsb only emits sharedStrings.bin if sharedStrings.length > 0.
       // Workaround: pass a placeholder SST and override via extraEntries.
       sheetRecords: [concat(rowHeader(0), cellIsst(0, 0))],
@@ -105,11 +109,10 @@ describe('BrtRichStr with formatting runs (§2.5 audit verification)', () => {
   it('reads a mix of plain and rich SST items in the same file', async () => {
     const xlsb = buildXlsb({
       sheetNames: ['S'],
-      sharedStrings: [],  // overridden below
-      sheetRecords: [concat(
-        rowHeader(0), cellIsst(0, 0), cellIsst(1, 1),
-        rowHeader(1), cellIsst(0, 2),
-      )],
+      sharedStrings: [], // overridden below
+      sheetRecords: [
+        concat(rowHeader(0), cellIsst(0, 0), cellIsst(1, 1), rowHeader(1), cellIsst(0, 2)),
+      ],
       extraEntries: {
         'xl/sharedStrings.bin': sstBytes([
           { s: 'plain' },

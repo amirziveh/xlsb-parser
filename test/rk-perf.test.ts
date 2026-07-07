@@ -36,12 +36,15 @@ describe('decodeRk: DataView scratch vs reference BigInt implementation', () => 
     // fInt path: payload bits 2..31 are the 30-bit signed integer
     // 0x80000000 → fInt=0; 0x00000002 → fInt=1 with num=0 → val=0
     // fInt=1 with num=0x1FFFFFFF → max signed 30-bit positive
-    samples.push(0x00000002, 0xFFFFFFFE, 0x7FFFFFFE, 0x00000001, 0x00000003);
+    samples.push(0x00000002, 0xfffffffe, 0x7ffffffe, 0x00000001, 0x00000003);
     // fInt=0 (double) path high bits
     for (let i = 0; i <= 30; i++) samples.push(((1 << i) << 2) >>> 0);
     // fx100 toggle on each of the above
     const withFx100: number[] = [];
-    for (const v of samples) { withFx100.push(v); withFx100.push((v | 0x01) >>> 0); }
+    for (const v of samples) {
+      withFx100.push(v);
+      withFx100.push((v | 0x01) >>> 0);
+    }
 
     const all = [...new Set([...samples, ...withFx100])];
     let checked = 0;

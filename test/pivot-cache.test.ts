@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseXlsb } from '../src/index.js';
-import {
-  buildXlsb, rec, u32, u16le, concat,
-} from './helpers';
+import { buildXlsb, rec, u32, u16le, concat } from './helpers';
 
 // Minimal pivot-cache fixtures. The current pivot-cache decoder is heuristic
 // (P5 of the roadmap will rewrite it spec-first), so these tests only lock
@@ -15,7 +13,7 @@ import {
 // uint32 nameLen at offset 20, then nameLen*2 UTF-16LE chars at offset 24.
 function pivotFieldRecordFixed(name: string): Uint8Array {
   const buf = new Uint8Array(20);
-  return rec(0x1B81, concat(buf, u32(name.length), u16le(name)));
+  return rec(0x1b81, concat(buf, u32(name.length), u16le(name)));
 }
 
 // Pivot-cache record 0x0021 (BrtPCDIRecord-ish) with one u32 field.
@@ -46,9 +44,10 @@ describe('pivot cache parsing', () => {
   it('parses up to the 0x2101 end-of-records marker', async () => {
     const def = pivotFieldRecordFixed('Field');
     const recs = concat(
-      pivotRecordU32(100), pivotRecordU32(200),
-      rec(0x2101, new Uint8Array(0)),  // end marker
-      pivotRecordU32(999),              // should be ignored
+      pivotRecordU32(100),
+      pivotRecordU32(200),
+      rec(0x2101, new Uint8Array(0)), // end marker
+      pivotRecordU32(999), // should be ignored
     );
     const xlsb = buildXlsb({
       sheetNames: ['S'],
@@ -67,8 +66,8 @@ describe('pivot cache parsing', () => {
     // Records part with leading unknown record type, then a real record.
     const def = pivotFieldRecordFixed('X');
     const recs = concat(
-      rec(0x9999, u32(0xDEADBEEF)),    // unknown, skipped
-      pivotRecordU32(5),                 // valid
+      rec(0x9999, u32(0xdeadbeef)), // unknown, skipped
+      pivotRecordU32(5), // valid
       rec(0x2101, new Uint8Array(0)),
     );
     const xlsb = buildXlsb({

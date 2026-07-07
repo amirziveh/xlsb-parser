@@ -21,7 +21,12 @@ describe('parseXlsb signature (P4a options bag)', () => {
     const calls: { msg: string; pct: number }[] = [];
     // Legacy form — 2nd arg is the callback directly. TS won't allow this
     // post-typing change since the signature is now options-only, so cast.
-    await (parseXlsb as any)(xlsb, (msg: string, pct: number) => calls.push({ msg, pct }));
+    await (
+      parseXlsb as unknown as (
+        d: Uint8Array,
+        cb: (msg: string, pct: number) => void,
+      ) => Promise<unknown>
+    )(xlsb, (msg, pct) => calls.push({ msg, pct }));
     expect(calls.length).toBeGreaterThan(0);
     expect(calls[calls.length - 1].msg).toBe('Done');
   });
@@ -66,7 +71,10 @@ describe('parseXlsb signature (P4a options bag)', () => {
       sharedStrings: [],
       sheetRecords: [],
       extraEntries: {
-        'xl/pivotCache/pivotCacheDefinition1.bin': rec(0x1B81, concat(new Uint8Array(20), u32(1), new Uint8Array([0, 0]))),
+        'xl/pivotCache/pivotCacheDefinition1.bin': rec(
+          0x1b81,
+          concat(new Uint8Array(20), u32(1), new Uint8Array([0, 0])),
+        ),
         'xl/pivotCache/pivotCacheRecords1.bin': rec(0x2101, new Uint8Array(0)),
       },
     });
@@ -81,7 +89,9 @@ describe('parseXlsb signature (P4a options bag)', () => {
       sharedStrings: [],
       sheetRecords: [],
       extraEntries: {
-        'xl/pivotCache/pivotCacheDefinition1.bin': concat(rec(0x1B81, concat(new Uint8Array(20), u32(1), new Uint8Array([0, 0])))),
+        'xl/pivotCache/pivotCacheDefinition1.bin': concat(
+          rec(0x1b81, concat(new Uint8Array(20), u32(1), new Uint8Array([0, 0]))),
+        ),
         'xl/pivotCache/pivotCacheRecords1.bin': rec(0x2101, new Uint8Array(0)),
       },
     });

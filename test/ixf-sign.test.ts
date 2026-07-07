@@ -24,7 +24,7 @@ describe('iStyleRef (ixf) sign extension', () => {
     const xlsb = buildXlsb({
       sheetNames: ['S'],
       sharedStrings: [],
-      sheetRecords: [concat(rowHeader(0), cellRealStyled(0, 99.0, 0xFF, 0xFF))],
+      sheetRecords: [concat(rowHeader(0), cellRealStyled(0, 99.0, 0xff, 0xff))],
     });
     const wb = await parseXlsb(xlsb);
     expect(wb.sheets[0].rows[0].cols[0]?.ixf).toBe(-1);

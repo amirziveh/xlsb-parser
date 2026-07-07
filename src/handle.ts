@@ -8,13 +8,17 @@
 // O(cells_per_row) instead of O(total_rows).
 
 import { unzipSync } from 'fflate';
-import type {
-  ParseOptions, ProgressCallback, ParsedRow, Sheet, StylesTable, Cell,
-} from './types.js';
+import type { ParseOptions, ProgressCallback, ParsedRow, Sheet, StylesTable } from './types.js';
 import { XlsbSizeError } from './types.js';
 import {
-  records, readU16, readU32,
-  BRT_ROW_HEADER, BRT_CELL_BLANK, BRT_FMLA_ERROR, BRT_SHORT_BLANK, BRT_SHORT_ISST,
+  records,
+  readU16,
+  readU32,
+  BRT_ROW_HEADER,
+  BRT_CELL_BLANK,
+  BRT_FMLA_ERROR,
+  BRT_SHORT_BLANK,
+  BRT_SHORT_ISST,
 } from './record-stream.js';
 import { parseWorkbook } from './workbook.js';
 import { parseSharedStrings } from './shared-strings.js';
@@ -37,7 +41,7 @@ export interface IterOptions {
 }
 
 function tick(): Promise<void> {
-  return new Promise(r => setTimeout(r, 0));
+  return new Promise((r) => setTimeout(r, 0));
 }
 
 function normalizeOptions(arg: ParseOptions | ProgressCallback | undefined): ParseOptions {
@@ -55,13 +59,14 @@ export async function openXlsb(
   const maxZipBytes = opts.maxZipBytes;
 
   onProgress?.('Decompressing ZIP...', 0);
-  await new Promise(r => setTimeout(r, 50));
+  await new Promise((r) => setTimeout(r, 50));
   const u8 = data instanceof ArrayBuffer ? new Uint8Array(data) : data;
   let zip: Record<string, Uint8Array>;
   try {
     zip = unzipSync(u8);
-  } catch (e: any) {
-    throw new Error('ZIP decompression failed: ' + (e?.message || e));
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error('ZIP decompression failed: ' + msg, { cause: e });
   }
 
   if (maxZipBytes !== undefined) {
@@ -70,7 +75,8 @@ export async function openXlsb(
     if (total > maxZipBytes) {
       throw new XlsbSizeError(
         `Decompressed ZIP size ${total} bytes exceeds maxZipBytes limit ${maxZipBytes}`,
-        maxZipBytes, total,
+        maxZipBytes,
+        total,
       );
     }
   }
@@ -92,7 +98,11 @@ export async function openXlsb(
   let styles: StylesTable | null = null;
   if (zip['xl/styles.bin']) {
     onProgress?.('Parsing styles...', 12);
-    try { styles = parseStyles(zip['xl/styles.bin']); } catch { styles = null; }
+    try {
+      styles = parseStyles(zip['xl/styles.bin']);
+    } catch {
+      styles = null;
+    }
     await tick();
   }
 
@@ -105,7 +115,10 @@ export async function openXlsb(
     sheetNames,
     sharedStrings,
     styles,
-    async *iterSheetRows(sheetIndex: number, iterOpts: IterOptions = {}): AsyncGenerator<ParsedRow> {
+    async *iterSheetRows(
+      sheetIndex: number,
+      iterOpts: IterOptions = {},
+    ): AsyncGenerator<ParsedRow> {
       const bytes = sheetBytes[sheetIndex];
       if (!bytes) return;
       const maxRows = iterOpts.maxRows;
@@ -144,15 +157,24 @@ export async function openXlsb(
         // Cell records attach to the current row, exactly like parseSheet.
         if (r.type >= BRT_CELL_BLANK && r.type <= BRT_FMLA_ERROR) {
           const col = readU32(d, 0);
-          const ixf = d.length >= 6 ? (d[4] | (d[5] << 8)) | (d[5] & 0x80 ? 0xFFFF0000 : 0) : undefined;
+          const ixf =
+            d.length >= 6 ? d[4] | (d[5] << 8) | (d[5] & 0x80 ? 0xffff0000 : 0) : undefined;
           const cell = readCell(r.type, d, 8, ss);
-          if (cell) { cell.ixf = ixf; applyDateMeta(cell, ixf, styles); curRow.cols[col] = cell; }
+          if (cell) {
+            cell.ixf = ixf;
+            applyDateMeta(cell, ixf, styles);
+            curRow.cols[col] = cell;
+          }
           prevCol = col;
         } else if (r.type >= BRT_SHORT_BLANK && r.type <= BRT_SHORT_ISST) {
           const col = prevCol + 1;
           const ixf = d.length >= 4 ? readU16(d, 2) : undefined;
           const cell = readShortCell(r.type, d, 4, ss);
-          if (cell) { cell.ixf = ixf; applyDateMeta(cell, ixf, styles); curRow.cols[col] = cell; }
+          if (cell) {
+            cell.ixf = ixf;
+            applyDateMeta(cell, ixf, styles);
+            curRow.cols[col] = cell;
+          }
           prevCol = col;
         }
       }

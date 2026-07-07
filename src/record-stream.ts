@@ -1,8 +1,6 @@
 // Low-level XLSB record stream primitives.
 // Spec ref: MS-XLSB §2.1.4 (record stream) and §2.5.122 (Brt* record types).
 
-import type { Cell } from './types.js';
-
 export interface XlsbRecord {
   type: number;
   data: Uint8Array;
@@ -23,24 +21,29 @@ export const BRT_CELL_ST = 0x06;
 export const BRT_CELL_ISST = 0x07;
 export const BRT_FMLA_STRING = 0x08;
 export const BRT_FMLA_NUM = 0x09;
-export const BRT_FMLA_BOOL = 0x0A;
-export const BRT_FMLA_ERROR = 0x0B;
-export const BRT_SHORT_BLANK = 0x0C;
-export const BRT_SHORT_RK = 0x0D;
-export const BRT_SHORT_ERROR = 0x0E;
-export const BRT_SHORT_BOOL = 0x0F;
+export const BRT_FMLA_BOOL = 0x0a;
+export const BRT_FMLA_ERROR = 0x0b;
+export const BRT_SHORT_BLANK = 0x0c;
+export const BRT_SHORT_RK = 0x0d;
+export const BRT_SHORT_ERROR = 0x0e;
+export const BRT_SHORT_BOOL = 0x0f;
 export const BRT_SHORT_REAL = 0x10;
 export const BRT_SHORT_ST = 0x11;
 export const BRT_SHORT_ISST = 0x12;
 export const BRT_SST_ITEM = 0x13;
-export const BRT_BUNDLE_SH = 0x9C;
-export const BRT_BUNDLE_SH_NEW = 0x0E01;
+export const BRT_BUNDLE_SH = 0x9c;
+export const BRT_BUNDLE_SH_NEW = 0x0e01;
 
 // Excel error codes — MS-OFFBFISO §2.5.97 (BrtErr)
 export const ERRORS: Record<number, string> = {
-  0x00: '#NULL!', 0x07: '#DIV/0!', 0x0F: '#VALUE!',
-  0x17: '#REF!', 0x1D: '#NAME?', 0x24: '#NUM!',
-  0x2A: '#N/A', 0x2B: '#GETTING_DATA',
+  0x00: '#NULL!',
+  0x07: '#DIV/0!',
+  0x0f: '#VALUE!',
+  0x17: '#REF!',
+  0x1d: '#NAME?',
+  0x24: '#NUM!',
+  0x2a: '#N/A',
+  0x2b: '#GETTING_DATA',
 };
 
 // ---- record stream iterator ----
@@ -60,9 +63,11 @@ export function* records(data: Uint8Array): Generator<XlsbRecord> {
           `Truncated .bin: record type byte at offset ${recStart} announces a second byte but only ${data.length} bytes total remain`,
         );
       }
-      t = ((t & 0x7F) << 7) | data[off++];
+      t = ((t & 0x7f) << 7) | data[off++];
     }
-    let s = 0, sh = 0, b: number;
+    let s = 0,
+      sh = 0,
+      b: number;
     do {
       if (off >= data.length) {
         throw new Error(
@@ -70,7 +75,7 @@ export function* records(data: Uint8Array): Generator<XlsbRecord> {
         );
       }
       b = data[off++];
-      s |= (b & 0x7F) << sh;
+      s |= (b & 0x7f) << sh;
       sh += 7;
     } while (b & 0x80);
     if (off + s > data.length) {
@@ -147,5 +152,6 @@ export function decodeRk(rk: number): number {
 // ---- debug hex helper (used by dumpBinary) ----
 export function hex(d: Uint8Array, max = 48): string {
   return Array.from(d.subarray(0, Math.min(max, d.length)))
-    .map(b => b.toString(16).padStart(2, '0')).join(' ');
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join(' ');
 }

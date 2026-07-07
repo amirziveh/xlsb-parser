@@ -1,9 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseXlsb } from '../src/index.js';
-import {
-  buildXlsb, rowHeader, concat, rec, stylesBinRecord,
-  cellRealWithStyle, u32,
-} from './helpers';
+import { buildXlsb, rowHeader, concat, stylesBinRecord, cellRealWithStyle } from './helpers';
 
 // P4: styles + date detection. When a cell's iStyleRef points to a cellXfs
 // whose numFmtId is a date format, the cell gets `numFmtId`, `isDate: true`,
@@ -14,11 +11,13 @@ describe('styles + date metadata', () => {
     const xlsb = buildXlsb({
       sheetNames: ['S'],
       sharedStrings: [],
-      sheetRecords: [concat(
-        rowHeader(0),
-        // cell at col 0, iStyleRef = 0 (first cellXfs entry), REAL = 42.0
-        cellRealWithStyle(0, 42.0, 0, 0),
-      )],
+      sheetRecords: [
+        concat(
+          rowHeader(0),
+          // cell at col 0, iStyleRef = 0 (first cellXfs entry), REAL = 42.0
+          cellRealWithStyle(0, 42.0, 0, 0),
+        ),
+      ],
       extraEntries: {
         // Override the default empty styles.bin
         'xl/styles.bin': stylesBinRecord({ cellXfs: [0] }),
@@ -38,10 +37,7 @@ describe('styles + date metadata', () => {
     const xlsb = buildXlsb({
       sheetNames: ['S'],
       sharedStrings: [],
-      sheetRecords: [concat(
-        rowHeader(0),
-        cellRealWithStyle(0, 44927, 0, 0),
-      )],
+      sheetRecords: [concat(rowHeader(0), cellRealWithStyle(0, 44927, 0, 0))],
       extraEntries: {
         'xl/styles.bin': stylesBinRecord({ cellXfs: [14] }),
       },
@@ -161,15 +157,13 @@ describe('styles + date metadata', () => {
   it('works without any styles.bin present (no metadata added to cells)', async () => {
     // buildXlsb always emits a stub styles.bin — to test "no styles" we need
     // to remove it. Use a custom ZIP without styles.bin.
-    const { zipSync } = await import('fflate');
-    const text = (s: string) => new TextEncoder().encode(s);
+    const { zipSync, unzipSync } = await import('fflate');
     // Reuse the minimal fixture, then rebuild the zip omitting styles.bin
     const minimal = buildXlsb({
       sheetNames: ['S'],
       sharedStrings: [],
       sheetRecords: [concat(rowHeader(0), cellRealWithStyle(0, 5, 0, 0))],
     });
-    const { unzipSync } = await import('fflate');
     const unzipped = unzipSync(minimal);
     delete unzipped['xl/styles.bin'];
     // Also need to delete the styles rel in workbook.bin.rels, but for the
@@ -199,11 +193,16 @@ describe('XlsbSizeError caps', () => {
     const xlsb = buildXlsb({
       sheetNames: ['S'],
       sharedStrings: [],
-      sheetRecords: [concat(
-        rowHeader(0), cellRealWithStyle(0, 1, 0, 0),
-        rowHeader(1), cellRealWithStyle(0, 2, 0, 0),
-        rowHeader(2), cellRealWithStyle(0, 3, 0, 0),
-      )],
+      sheetRecords: [
+        concat(
+          rowHeader(0),
+          cellRealWithStyle(0, 1, 0, 0),
+          rowHeader(1),
+          cellRealWithStyle(0, 2, 0, 0),
+          rowHeader(2),
+          cellRealWithStyle(0, 3, 0, 0),
+        ),
+      ],
     });
     const { XlsbSizeError } = await import('../src/index.js');
     await expect(parseXlsb(xlsb, { maxRowsPerSheet: 2 })).rejects.toBeInstanceOf(XlsbSizeError);

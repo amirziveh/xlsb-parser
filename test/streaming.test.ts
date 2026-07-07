@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { openXlsb } from '../src/index.js';
-import {
-  buildXlsb, rowHeader, cellReal, cellIsst, concat,
-} from './helpers';
+import { buildXlsb, rowHeader, cellReal, cellIsst, concat } from './helpers';
 
 // P4b: streaming via openXlsb() handle. Memory: O(cells_per_row) instead
 // of O(total_rows). Tests verify the handle API and that rows are yielded
@@ -27,11 +25,16 @@ describe('openXlsb — streaming handle', () => {
     const xlsb = buildXlsb({
       sheetNames: ['S'],
       sharedStrings: [],
-      sheetRecords: [concat(
-        rowHeader(0), cellReal(0, 1.1),
-        rowHeader(1), cellReal(0, 2.2),
-        rowHeader(2), cellReal(0, 3.3),
-      )],
+      sheetRecords: [
+        concat(
+          rowHeader(0),
+          cellReal(0, 1.1),
+          rowHeader(1),
+          cellReal(0, 2.2),
+          rowHeader(2),
+          cellReal(0, 3.3),
+        ),
+      ],
     });
     const handle = await openXlsb(xlsb);
     const rows = [];
@@ -48,12 +51,16 @@ describe('openXlsb — streaming handle', () => {
     const xlsb = buildXlsb({
       sheetNames: ['S'],
       sharedStrings: ['a', 'b'],
-      sheetRecords: [concat(
-        rowHeader(0),
-        cellIsst(0, 0), cellIsst(1, 1), cellReal(2, 100),
-        rowHeader(1),
-        cellReal(0, 99),
-      )],
+      sheetRecords: [
+        concat(
+          rowHeader(0),
+          cellIsst(0, 0),
+          cellIsst(1, 1),
+          cellReal(2, 100),
+          rowHeader(1),
+          cellReal(0, 99),
+        ),
+      ],
     });
     const handle = await openXlsb(xlsb);
     const rows = [];
@@ -69,13 +76,20 @@ describe('openXlsb — streaming handle', () => {
     const xlsb = buildXlsb({
       sheetNames: ['S'],
       sharedStrings: [],
-      sheetRecords: [concat(
-        rowHeader(0), cellReal(0, 1),
-        rowHeader(1), cellReal(0, 2),
-        rowHeader(2), cellReal(0, 3),
-        rowHeader(3), cellReal(0, 4),
-        rowHeader(4), cellReal(0, 5),
-      )],
+      sheetRecords: [
+        concat(
+          rowHeader(0),
+          cellReal(0, 1),
+          rowHeader(1),
+          cellReal(0, 2),
+          rowHeader(2),
+          cellReal(0, 3),
+          rowHeader(3),
+          cellReal(0, 4),
+          rowHeader(4),
+          cellReal(0, 5),
+        ),
+      ],
     });
     const handle = await openXlsb(xlsb);
     const rows = [];
@@ -89,10 +103,9 @@ describe('openXlsb — streaming handle', () => {
     const xlsb = buildXlsb({
       sheetNames: ['S'],
       sharedStrings: [],
-      sheetRecords: [concat(
-        rowHeader(0), cellReal(0, 1), cellReal(1, 2),
-        rowHeader(1), cellReal(0, 3),
-      )],
+      sheetRecords: [
+        concat(rowHeader(0), cellReal(0, 1), cellReal(1, 2), rowHeader(1), cellReal(0, 3)),
+      ],
     });
     const handle = await openXlsb(xlsb);
     const sheet = await handle.collectSheet(0);
@@ -127,12 +140,13 @@ describe('openXlsb — streaming handle', () => {
     });
     const handle = await openXlsb(xlsb);
     let count = 0;
-    let first = -1, last = -1;
+    let first = -1,
+      last = -1;
     for await (const r of handle.iterSheetRows(0)) {
       if (count === 0) first = r.row;
       last = r.row;
       count++;
-      if (count % 100 === 0) await new Promise(res => setTimeout(res, 0));
+      if (count % 100 === 0) await new Promise((res) => setTimeout(res, 0));
     }
     expect(count).toBe(1000);
     expect(first).toBe(0);
@@ -141,7 +155,9 @@ describe('openXlsb — streaming handle', () => {
 
   it('accepts the legacy 2nd-arg function form for backwards compat', async () => {
     const xlsb = buildXlsb({
-      sheetNames: ['S'], sharedStrings: [], sheetRecords: [new Uint8Array(0)],
+      sheetNames: ['S'],
+      sharedStrings: [],
+      sheetRecords: [new Uint8Array(0)],
     });
     const calls: string[] = [];
     const handle = await openXlsb(xlsb, (msg) => calls.push(msg));
@@ -151,7 +167,8 @@ describe('openXlsb — streaming handle', () => {
 
   it('accepts ArrayBuffer input directly', async () => {
     const xlsb = buildXlsb({
-      sheetNames: ['S'], sharedStrings: [],
+      sheetNames: ['S'],
+      sharedStrings: [],
       sheetRecords: [concat(rowHeader(0), cellReal(0, 1))],
     });
     // Pass the underlying ArrayBuffer (not the Uint8Array view).
@@ -165,7 +182,8 @@ describe('openXlsb — streaming handle', () => {
 
   it('throws when maxZipBytes is exceeded', async () => {
     const xlsb = buildXlsb({
-      sheetNames: ['S'], sharedStrings: [],
+      sheetNames: ['S'],
+      sharedStrings: [],
       sheetRecords: [concat(rowHeader(0), cellReal(0, 1))],
     });
     const { XlsbSizeError } = await import('../src/index.js');
@@ -176,24 +194,31 @@ describe('openXlsb — streaming handle', () => {
     const rowRecs: Uint8Array[] = [];
     for (let i = 0; i < 2000; i++) rowRecs.push(concat(rowHeader(i), cellReal(0, i)));
     const xlsb = buildXlsb({
-      sheetNames: ['Big'], sharedStrings: [], sheetRecords: [concat(...rowRecs)],
+      sheetNames: ['Big'],
+      sharedStrings: [],
+      sheetRecords: [concat(...rowRecs)],
     });
     const handle = await openXlsb(xlsb);
     const calls: { msg: string; pct: number }[] = [];
     for await (const _ of handle.iterSheetRows(0, {
       onProgress: (msg, pct) => calls.push({ msg, pct }),
-    })) { /* drain */ }
+    })) {
+      /* drain */
+    }
     expect(calls.length).toBeGreaterThan(0);
   });
 
   it('collectSheet drains even when onProgress is set', async () => {
     const xlsb = buildXlsb({
-      sheetNames: ['S'], sharedStrings: [],
+      sheetNames: ['S'],
+      sharedStrings: [],
       sheetRecords: [concat(rowHeader(0), cellReal(0, 1), rowHeader(1), cellReal(0, 2))],
     });
     const handle = await openXlsb(xlsb);
     const calls: { msg: string; pct: number }[] = [];
-    const sheet = await handle.collectSheet(0, { onProgress: (msg, pct) => calls.push({ msg, pct }) });
+    const sheet = await handle.collectSheet(0, {
+      onProgress: (msg, pct) => calls.push({ msg, pct }),
+    });
     expect(sheet.rows.length).toBe(2);
   });
 });

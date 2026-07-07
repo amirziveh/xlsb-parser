@@ -17,13 +17,15 @@ export function dumpBinary(path: string, data: Uint8Array, maxRec = 200): Binary
     if (recordsArr.length >= maxRec) continue;
 
     const strings: string[] = [];
-    for (let off = 0; off + 4 < r.data.length;) {
+    for (let off = 0; off + 4 < r.data.length; ) {
       const len = readU32(r.data, off);
       if (len > 0 && len < 200 && off + 4 + len * 2 <= r.data.length) {
         try {
           const s = dec16.decode(r.data.subarray(off + 4, off + 4 + len * 2)).replace(/\0/g, '');
           if (s.length >= 2) strings.push(s);
-        } catch { /* skip */ }
+        } catch {
+          /* skip */
+        }
         off += 4 + len * 2;
       } else {
         off++;
@@ -40,7 +42,13 @@ export function dumpBinary(path: string, data: Uint8Array, maxRec = 200): Binary
   }
 
   if (total > maxRec) {
-    recordsArr.push({ type: '...', typeNum: -1, size: 0, hex: `[${total - maxRec} more records omitted]`, strings: [] });
+    recordsArr.push({
+      type: '...',
+      typeNum: -1,
+      size: 0,
+      hex: `[${total - maxRec} more records omitted]`,
+      strings: [],
+    });
   }
 
   return { path, size: data.length, recCount: total, records: recordsArr, typeSummary };

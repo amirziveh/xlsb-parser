@@ -20,20 +20,25 @@ describe('short-cell column sequencing', () => {
     // So short record data: bytes 0..1 = something(2), bytes 2..3 = iStyleRef, bytes 4.. = value
     // For BRT_SHORT_RK: value = uint32 RK at offset 4
     // Build a short RK cell encoding 0 as RK → value 0
-    const shortRk = (rkValue: number) => rec(0x0D, concat(new Uint8Array([0, 0]), new Uint8Array([0, 0]), u32(rkValue)));
+    const shortRk = (rkValue: number) =>
+      rec(0x0d, concat(new Uint8Array([0, 0]), new Uint8Array([0, 0]), u32(rkValue)));
 
     const xlsb = buildXlsb({
       sheetNames: ['S'],
       sharedStrings: [],
-      sheetRecords: [concat(
-        rowHeader(0),
-        shortRk(0),                  // cell at col 0
-        shortRk(0x00000002),        // RK encoding integer 0 (same value, but next col 1)
-        shortRk(0x00000002),        // col 2
-      )],
+      sheetRecords: [
+        concat(
+          rowHeader(0),
+          shortRk(0), // cell at col 0
+          shortRk(0x00000002), // RK encoding integer 0 (same value, but next col 1)
+          shortRk(0x00000002), // col 2
+        ),
+      ],
     });
     const wb = await parseXlsb(xlsb);
-    const cols = Object.keys(wb.sheets[0].rows[0].cols).map(Number).sort((a, b) => a - b);
+    const cols = Object.keys(wb.sheets[0].rows[0].cols)
+      .map(Number)
+      .sort((a, b) => a - b);
     expect(cols).toEqual([0, 1, 2]);
   });
 });

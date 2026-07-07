@@ -474,9 +474,11 @@ function unzipSync(data, opts) {
 
 // src/types.ts
 var XlsbSizeError = class extends Error {
+  name = "XlsbSizeError";
+  limit;
+  actual;
   constructor(message, limit, actual) {
     super(message);
-    this.name = "XlsbSizeError";
     this.limit = limit;
     this.actual = actual;
   }
@@ -722,11 +724,7 @@ function parseSheet(data, ss, opts = {}) {
     const d = r.data;
     if (r.type === BRT_ROW_HEADER && d.length >= 4) {
       if (maxRows !== void 0 && rows.length >= maxRows) {
-        throw new XlsbSizeError(
-          `Sheet exceeded maxRows=${maxRows} limit`,
-          maxRows,
-          rows.length
-        );
+        throw new XlsbSizeError(`Sheet exceeded maxRows=${maxRows} limit`, maxRows, rows.length);
       }
       curRow = { row: readU32(d, 0), cols: {} };
       rows.push(curRow);
@@ -870,7 +868,13 @@ function dumpBinary(path, data, maxRec = 200) {
     });
   }
   if (total > maxRec) {
-    recordsArr.push({ type: "...", typeNum: -1, size: 0, hex: `[${total - maxRec} more records omitted]`, strings: [] });
+    recordsArr.push({
+      type: "...",
+      typeNum: -1,
+      size: 0,
+      hex: `[${total - maxRec} more records omitted]`,
+      strings: []
+    });
   }
   return { path, size: data.length, recCount: total, records: recordsArr, typeSummary };
 }
@@ -927,7 +931,13 @@ function parsePivotCache(name, def, recs) {
       if (d[0] === 32) {
         const count = readU32(d, 2);
         for (let i = 0, off = 6; i < count && off + 8 <= d.length; i++, off += 8) {
-          curItems.push(formatYMD(d[off] | d[off + 1] << 8, d[off + 2] | d[off + 3] << 8, d[off + 4] | d[off + 5] << 8));
+          curItems.push(
+            formatYMD(
+              d[off] | d[off + 1] << 8,
+              d[off + 2] | d[off + 3] << 8,
+              d[off + 4] | d[off + 5] << 8
+            )
+          );
         }
       } else if (d[0] === 2) {
         const count = readU32(d, 2);
@@ -958,7 +968,7 @@ function parsePivotCache(name, def, recs) {
   for (let fi = 0; fi < fieldCount; fi++) {
     for (let ri = 0; ri < recBodies.length; ri++) {
       const body = recBodies[ri];
-      let off = recOffsets[ri];
+      const off = recOffsets[ri];
       if (off < 0 || off + 4 > body.length) continue;
       const len = readU32(body, off);
       if (len >= 3 && len < 200 && off + 4 + len * 2 <= body.length) {
@@ -985,7 +995,7 @@ function parsePivotCache(name, def, recs) {
     if (fields[fi] === "str") {
       for (let ri = 0; ri < recBodies.length; ri++) {
         const body = recBodies[ri];
-        let off = recOffsets[ri];
+        const off = recOffsets[ri];
         if (off >= 0) {
           const len = readU32(body, off);
           recOffsets[ri] = off + 4 + len * 2;
@@ -996,7 +1006,7 @@ function parsePivotCache(name, def, recs) {
     let isF64 = false;
     for (let ri = 0; ri < recBodies.length; ri++) {
       const body = recBodies[ri];
-      let off = recOffsets[ri];
+      const off = recOffsets[ri];
       if (off < 0 || off + 8 > body.length) continue;
       const f = readF64(body, off);
       const lo = readU32(body, off);
@@ -1013,7 +1023,8 @@ function parsePivotCache(name, def, recs) {
     }
   }
   for (let i = 1; i < fields.length - 1; i++) {
-    if (fields[i] === "u32" && fields[i - 1] === "f64" && fields[i + 1] === "f64") fields[i] = "f64";
+    if (fields[i] === "u32" && fields[i - 1] === "f64" && fields[i + 1] === "f64")
+      fields[i] = "f64";
   }
   let changed = true;
   while (changed) {
@@ -1108,7 +1119,9 @@ function parsePivotCache(name, def, recs) {
       } else if (ft === "f64") {
         if (off + 8 <= d.length) {
           const f = readF64(d, off);
-          values.push(f === 0 ? 0 : Math.abs(f) >= 1 ? parseFloat(f.toFixed(4)) : parseFloat(f.toFixed(8)));
+          values.push(
+            f === 0 ? 0 : Math.abs(f) >= 1 ? parseFloat(f.toFixed(4)) : parseFloat(f.toFixed(8))
+          );
           off += 8;
         } else {
           values.push(null);
@@ -1139,7 +1152,12 @@ function parsePivotCache(name, def, recs) {
     }
     if (lastPopulated + 1 < fieldNames.length) fieldNames.length = lastPopulated + 1;
   }
-  return { name, fieldNames, rows, rowCount: recBodies.length > 50 ? recBodies.length : rows.length };
+  return {
+    name,
+    fieldNames,
+    rows,
+    rowCount: recBodies.length > 50 ? recBodies.length : rows.length
+  };
 }
 
 // src/handle.ts
@@ -1162,7 +1180,8 @@ async function openXlsb(data, options) {
   try {
     zip = unzipSync(u82);
   } catch (e) {
-    throw new Error("ZIP decompression failed: " + (e?.message || e));
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error("ZIP decompression failed: " + msg, { cause: e });
   }
   if (maxZipBytes !== void 0) {
     let total = 0;
@@ -1298,7 +1317,8 @@ async function parseXlsb(data, options) {
   try {
     zip = unzipSync(u82);
   } catch (e) {
-    throw new Error("ZIP decompression failed: " + (e?.message || e));
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error("ZIP decompression failed: " + msg, { cause: e });
   }
   if (maxZipBytes !== void 0) {
     let total = 0;
@@ -1399,7 +1419,6 @@ async function parseXlsb(data, options) {
       }
     }
   }
-  zip = null;
   onProgress?.("Done", 100);
   await tick2();
   return out;

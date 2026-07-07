@@ -27,7 +27,9 @@ describe('BRT_FMLA_STRING minimum-length guard (§2.15)', () => {
     const xlsb = buildXlsb({
       sheetNames: ['S'],
       sharedStrings: [],
-      sheetRecords: [concat(rowHeader(0), rec(0x08, concat(u32(0), new Uint8Array(4), u32(s.length), u16le(s))))],
+      sheetRecords: [
+        concat(rowHeader(0), rec(0x08, concat(u32(0), new Uint8Array(4), u32(s.length), u16le(s)))),
+      ],
     });
     const wb = await parseXlsb(xlsb);
     expect(wb.sheets[0].rows[0].cols[0]?.v).toBe('hi');
@@ -38,7 +40,12 @@ describe('BRT_FMLA_STRING minimum-length guard (§2.15)', () => {
     const xlsb = buildXlsb({
       sheetNames: ['S'],
       sharedStrings: [],
-      sheetRecords: [concat(rowHeader(0), rec(0x08, concat(u32(0), new Uint8Array([0, 0, 0, 0]), new Uint8Array([0x99, 0x99]))))],
+      sheetRecords: [
+        concat(
+          rowHeader(0),
+          rec(0x08, concat(u32(0), new Uint8Array([0, 0, 0, 0]), new Uint8Array([0x99, 0x99]))),
+        ),
+      ],
     });
     const wb = await parseXlsb(xlsb);
     expect(wb.sheets[0].rows[0].cols[0]).toBeUndefined();

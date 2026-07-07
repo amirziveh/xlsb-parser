@@ -47,12 +47,14 @@ describe('bounds checks on truncated cell records', () => {
     const xlsb = buildXlsb({
       sheetNames: ['S'],
       sharedStrings: ['A'],
-      sheetRecords: [concat(
-        rowHeader(0),
-        rec(0x07, concat(u32(0), new Uint8Array(4), u32(0))),  // valid isst → "A" at col 0
-        rec(0x05, u32(2)),                                     // truncated real at col 2
-        rec(0x07, concat(u32(3), new Uint8Array(4), u32(0))),  // valid isst → "A" at col 3
-      )],
+      sheetRecords: [
+        concat(
+          rowHeader(0),
+          rec(0x07, concat(u32(0), new Uint8Array(4), u32(0))), // valid isst → "A" at col 0
+          rec(0x05, u32(2)), // truncated real at col 2
+          rec(0x07, concat(u32(3), new Uint8Array(4), u32(0))), // valid isst → "A" at col 3
+        ),
+      ],
     });
     const wb = await parseXlsb(xlsb);
     expect(wb.sheets[0].rows[0].cols[0]?.v).toBe('A');

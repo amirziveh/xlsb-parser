@@ -24,12 +24,15 @@ describe('unknown cell type opcode', () => {
     // AND outside [BRT_SHORT_BLANK..BRT_SHORT_ISST]. That hits the "neither
     // long nor short cell" path → continue.
     const xlsb = buildXlsb({
-      sheetNames: ['S'], sharedStrings: [],
-      sheetRecords: [concat(
-        rowHeader(0),
-        rec(0x80, u32(0)), // unknown type, neither long nor short cell
-        cellStuffThatShouldNotParse(),
-      )],
+      sheetNames: ['S'],
+      sharedStrings: [],
+      sheetRecords: [
+        concat(
+          rowHeader(0),
+          rec(0x80, u32(0)), // unknown type, neither long nor short cell
+          cellStuffThatShouldNotParse(),
+        ),
+      ],
     });
     const wb = await parseXlsb(xlsb);
     expect(wb.sheets[0].rows[0].cols[0]).toBeUndefined();
@@ -54,7 +57,9 @@ describe('workbook.bin missing', () => {
       '[Content_Types].xml': text(
         '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"></Types>',
       ),
-      '_rels/.rels': text('<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'),
+      '_rels/.rels': text(
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>',
+      ),
       // NOTE: no xl/workbook.bin
     };
     const buf = new Uint8Array(zipSync(zipInput, { level: 0 }));

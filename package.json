@@ -1,7 +1,7 @@
 {
   "name": "xlsb-parser",
-  "version": "0.2.0",
-  "description": "Browser-based XLSB (Excel Binary Workbook) parser. Pure JS, no native addons.",
+  "version": "1.0.0-rc.1",
+  "description": "Pure-JS XLSB (Excel Binary Workbook) parser. No native addons. Works in browsers and Node.js 20+.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -14,13 +14,20 @@
   },
   "files": [
     "dist",
-    "LICENSE"
+    "LICENSE",
+    "README.md"
   ],
+  "sideEffects": false,
   "scripts": {
     "build": "tsc",
-    "build:browser": "esbuild src/index.ts --bundle --outfile=public/bundle.js --format=esm",
+    "build:browser": "esbuild src/index.ts --bundle --outfile=examples/browser-demo/bundle.js --format=esm",
     "test": "vitest run",
-    "dev": "node server.mjs",
+    "test:coverage": "vitest run --coverage",
+    "test:types": "tsc -p tsconfig.test.json",
+    "lint": "eslint .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "dev": "npm run build:browser && node examples/browser-demo/server.mjs",
     "prepublishOnly": "npm run build",
     "prepare": "npm run build"
   },
@@ -31,16 +38,40 @@
     "workbook",
     "parser",
     "browser",
-    "xlsx"
+    "xlsx",
+    "spreadsheet",
+    "xlsb-parser",
+    "excel-binary"
   ],
   "license": "MIT",
+  "author": "xlsb-parser contributors",
+  "homepage": "https://github.com/anomalyco/xlsb-parser",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anomalyco/xlsb-parser.git"
+  },
+  "bugs": {
+    "url": "https://github.com/anomalyco/xlsb-parser/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "tsd": {
+    "directory": "test"
+  },
   "dependencies": {
     "fflate": "^0.8.2"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.2",
+    "@eslint/js": "^10.0.1",
+    "@typescript-eslint/eslint-plugin": "^8.63.0",
+    "@typescript-eslint/parser": "^8.63.0",
     "@vitest/coverage-v8": "^4.1.10",
     "esbuild": "^0.25.0",
+    "eslint": "^10.6.0",
     "typescript": "^5.7.0",
+    "typescript-eslint": "^8.63.0",
     "vitest": "^4.1.9"
   }
 }

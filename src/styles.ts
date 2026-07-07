@@ -23,18 +23,15 @@ import { records, readU16 } from './record-stream.js';
 
 // BrtFmt records define custom number formats: { numFmtId, formatString }.
 // BrtFmt = 0x02D9 (sometimes seen as 0x2D9 — same thing)
-const BRT_FMT = 0x02D9;
+const BRT_FMT = 0x02d9;
 // BrtCellXF (aka BrtXF in modern docs) = 0x01F9 — represents a cellXfs entry.
 // Per MS-OFFBFISO §2.4.300 BrtXF: data starts with uint16 numFmtId.
-const BRT_CELL_XF = 0x01F9;
+const BRT_CELL_XF = 0x01f9;
 // BrtStyle records also exist but we skip them.
 
 const BUILTIN_DATE_FMT_IDS = new Set<number>([
-  14, 15, 16, 17, 18, 19, 20, 21, 22,
-  27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
-  45, 46, 47,
-  50, 51, 52, 53, 54, 55, 56, 57, 58,
-  78, 79, 80, 81,
+  14, 15, 16, 17, 18, 19, 20, 21, 22, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 45, 46, 47, 50, 51,
+  52, 53, 54, 55, 56, 57, 58, 78, 79, 80, 81,
 ]);
 
 // Excel's earliest author-supported date serial (1.0 = 1900-01-01 in their
@@ -55,7 +52,9 @@ export function parseStyles(data: Uint8Array): StylesTable {
           const s = new TextDecoder('utf-16le').decode(r.data.subarray(6, 6 + len * 2));
           numFmts.set(numFmtId, s);
         }
-      } catch { /* skip malformed */ }
+      } catch {
+        /* skip malformed */
+      }
     } else if (r.type === BRT_CELL_XF && r.data.length >= 2) {
       cellXfs.push(readU16(r.data, 0));
     }
@@ -67,7 +66,9 @@ export function parseStyles(data: Uint8Array): StylesTable {
 // Local helper — readU32 isn't used here normally but we need a 4-byte read
 // for the format string length field. Reuse record-stream's readU32.
 import { readU32 } from './record-stream.js';
-function readU32At(d: Uint8Array, off: number): number { return readU32(d, off); }
+function readU32At(d: Uint8Array, off: number): number {
+  return readU32(d, off);
+}
 
 // Built-in date format IDs cover the standard Excel date/time/percent-ish
 // formats (Microsoft's documented table in MS-OFFBFISO §2.4.326).
@@ -84,9 +85,18 @@ export function isDateNumFmtString(fmt: string): boolean {
   let quote = false;
   for (let i = 0; i < fmt.length; i++) {
     const c = fmt[i];
-    if (escaped) { escaped = false; continue; }
-    if (c === '\\') { escaped = true; continue; }
-    if (c === '"') { quote = !quote; continue; }
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (c === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (c === '"') {
+      quote = !quote;
+      continue;
+    }
     if (quote) continue;
     if (/[dmyYhHsS]/.test(c)) return true;
     // AM/PM marker — only outside quotes/escapes

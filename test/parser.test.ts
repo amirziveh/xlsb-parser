@@ -47,7 +47,7 @@ describe('sheet parsing', () => {
 
   it('assigns correct row indices', async () => {
     const xlsb = makeMinimalXlsb();
-    const rows = await parseXlsb(xlsb).then(w => w.sheets[0].rows);
+    const rows = await parseXlsb(xlsb).then((w) => w.sheets[0].rows);
     expect(rows[0].row).toBe(0);
     expect(rows[1].row).toBe(1);
     expect(rows[2].row).toBe(2);
@@ -75,14 +75,14 @@ describe('shared strings', () => {
 describe('cell value types', () => {
   it('reads a real (float64) cell', async () => {
     const xlsb = makeMinimalXlsb();
-    const rows = await parseXlsb(xlsb).then(w => w.sheets[0].rows);
+    const rows = await parseXlsb(xlsb).then((w) => w.sheets[0].rows);
     expect(rows[1].cols[1]?.v).toBe(42.5);
     expect(rows[1].cols[1]?.t).toBe('n');
   });
 
   it('reads a blank cell', async () => {
     const xlsb = makeMinimalXlsb();
-    const rows = await parseXlsb(xlsb).then(w => w.sheets[0].rows);
+    const rows = await parseXlsb(xlsb).then((w) => w.sheets[0].rows);
     expect(rows[2].cols[1]?.t).toBe('blank');
     expect(rows[2].cols[1]?.v).toBeUndefined();
   });

@@ -8,3 +8,4 @@ node_modules
 tmp_decode.mjs
 debug.mjs
 coverage/
+.opencode/

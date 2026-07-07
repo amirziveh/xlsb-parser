@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseXlsb } from '../src/index.js';
-import { buildXlsb, rowHeader, rec, encType, encSize, concat, u32, u16le } from './helpers';
+import { buildXlsb, rowHeader, rec, encType, encSize, concat, u32 } from './helpers';
 
 // §2.4: records() silently clamps a record's declared size down to whatever
 // bytes remain in the buffer: `if (off + s > data.length) s = data.length - off;`
@@ -14,7 +14,7 @@ describe('records() rejects truncated .bin files', () => {
     // yield a 20-byte record, causing parseWorkbook to read inaccurate data
     // (or worse, contiguous-buffer over-reads in nested decoders).
     const declaredSize = 200;
-    const fakeRecord = concat(encType(0x0E01), encSize(declaredSize), new Uint8Array(20));
+    const fakeRecord = concat(encType(0x0e01), encSize(declaredSize), new Uint8Array(20));
     // Pad workbook with one minimal-but-legible bundle record first to keep
     // parseWorkbook happy after the broken one (we want the throw to come
     // from the broken record itself, not from absent sheets).
