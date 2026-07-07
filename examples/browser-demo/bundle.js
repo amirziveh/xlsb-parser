@@ -1127,10 +1127,13 @@ function decodeDtCell(r, f) {
     }
     return { t: "blank" };
   }
-  if (r.type === BRT_PCDINUMBER) return d.length >= 8 ? { t: "n", v: readF64(d, 0) } : { t: "blank" };
-  if (r.type === BRT_PCDIDATETIME) return d.length >= 8 ? { t: "d", v: decodePCDIDateTime(d, 0) } : { t: "blank" };
+  if (r.type === BRT_PCDINUMBER)
+    return d.length >= 8 ? { t: "n", v: readF64(d, 0) } : { t: "blank" };
+  if (r.type === BRT_PCDIDATETIME)
+    return d.length >= 8 ? { t: "d", v: decodePCDIDateTime(d, 0) } : { t: "blank" };
   if (r.type === BRT_PCDIBOOLEAN) return d.length >= 1 ? { t: "b", v: d[0] !== 0 } : { t: "blank" };
-  if (r.type === BRT_PCDIERROR) return d.length >= 1 ? { t: "e", v: errorName(d[0]) } : { t: "blank" };
+  if (r.type === BRT_PCDIERROR)
+    return d.length >= 1 ? { t: "e", v: errorName(d[0]) } : { t: "blank" };
   if (r.type === BRT_PCDIMISSING) return { t: "blank" };
   return { t: "blank" };
 }
@@ -1245,7 +1248,12 @@ async function openXlsb(data, options) {
         const pcs = {
           name: d.name,
           fieldNames: defs.map((b) => b.name),
-          fields: defs.map((b) => ({ name: b.name, isSrc: b.isSrc, kind: b.kind, sharedItems: b.sharedItems })),
+          fields: defs.map((b) => ({
+            name: b.name,
+            isSrc: b.isSrc,
+            kind: b.kind,
+            sharedItems: b.sharedItems
+          })),
           rowCount: 0
         };
         for (const r of records(d.recs)) {

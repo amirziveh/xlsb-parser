@@ -27,6 +27,7 @@
     color: #888; position: sticky; left: 0; z-index: 1; }
   td.s { color: #06c; }
   td.n { color: #060; }
+  td.e { color: #c00; }
   td.b { color: #c60; }
   td.e { color: #c00; }
   .hidden { display: none; }
@@ -228,10 +229,18 @@ async function showPivotCaches(wb) {
         const v = row[c];
         if (v === null || v === undefined) {
           html += '<td></td>';
-        } else if (typeof v === 'string') {
-          html += `<td class="s">${escHtml(v)}</td>`;
+        } else if (v.t === 's') {
+          html += `<td class="s">${escHtml(v.v)}</td>`;
+        } else if (v.t === 'n') {
+          html += `<td class="n">${v.v.toLocaleString(undefined, {maximumFractionDigits: 2})}</td>`;
+        } else if (v.t === 'd') {
+          html += `<td class="s">${escHtml(v.v)}</td>`;
+        } else if (v.t === 'b') {
+          html += `<td class="n">${v.v}</td>`;
+        } else if (v.t === 'e') {
+          html += `<td class="e">${escHtml(v.v)}</td>`;
         } else {
-          html += `<td class="n">${typeof v === 'number' ? v.toLocaleString(undefined, {maximumFractionDigits: 2}) : v}</td>`;
+          html += '<td></td>';
         }
       }
       html += '</tr>';
