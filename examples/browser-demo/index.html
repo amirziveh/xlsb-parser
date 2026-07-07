@@ -94,8 +94,11 @@ parseBtn.onclick = async () => {
     log('Got ArrayBuffer: ' + (data.byteLength / 1024 / 1024).toFixed(1) + ' MB');
     // Let the browser paint the log before sync work starts
     await new Promise(r => setTimeout(r, 10));
-    const wb = await parseXlsb(data, (msg, pct) => {
-      log('[' + pct + '%] ' + msg);
+    const wb = await parseXlsb(data, {
+      parsePivotCaches: true,
+      onProgress: (msg, pct) => {
+        log('[' + pct + '%] ' + msg);
+      },
     });
     log('Done! ' + wb.sheets.length + ' sheets, ' + wb.sharedStrings.length + ' shared strings');
     statusEl.textContent = `Parsed ${wb.sheets.length} sheet(s), ${wb.sharedStrings.length} shared string(s), ${wb.summary.totalRecords.toLocaleString()} binary records`;

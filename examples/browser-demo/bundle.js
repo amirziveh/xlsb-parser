@@ -509,6 +509,20 @@ var BRT_SHORT_ISST = 18;
 var BRT_SST_ITEM = 19;
 var BRT_BUNDLE_SH = 156;
 var BRT_BUNDLE_SH_NEW = 3585;
+var BRT_BEGIN_PCD_FIELD = 7041;
+var BRT_BEGIN_PCD_ATBL = 7809;
+var BRT_BEGIN_PCDIRUN = 8065;
+var BRT_PCDI_STRING = 24;
+var BRT_PCDI_STRING2 = 31;
+var BRT_PCDIDATETIME = 32;
+var BRT_PCDINUMBER = 21;
+var BRT_PCDIBOOLEAN = 22;
+var BRT_PCDIERROR = 23;
+var BRT_PCDIMISSING = 20;
+var BRT_BEGIN_PIVOT_CACHE_RECORDS = 8321;
+var BRT_PC_RECORD = 33;
+var BRT_PC_RECORD_DT = 34;
+var BRT_END_PIVOT_CACHE_RECORDS = 8449;
 var ERRORS = {
   0: "#NULL!",
   7: "#DIV/0!",
@@ -880,284 +894,271 @@ function dumpBinary(path, data, maxRec = 200) {
 }
 
 // src/pivot-cache.ts
-function formatYMD(y, m, d) {
-  return String(y).padStart(4, "0") + "-" + String(m).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+function decodePCDIDateTime(d, off) {
+  const yr = d[off] | d[off + 1] << 8;
+  const mon = d[off + 2] | d[off + 3] << 8;
+  const dom = d[off + 4];
+  const hr = d[off + 5];
+  const min = d[off + 6];
+  const sec = d[off + 7];
+  const date = String(yr).padStart(4, "0") + "-" + String(mon).padStart(2, "0") + "-" + String(dom).padStart(2, "0");
+  if (hr === 0 && min === 0 && sec === 0) return date;
+  const t = String(hr).padStart(2, "0") + ":" + String(min).padStart(2, "0") + ":" + String(sec).padStart(2, "0");
+  return date + "T" + t;
 }
-function parsePivotCache(name, def, recs) {
-  const fieldNames = [];
-  const sharedItems = [];
-  let curItems = [];
-  let fallbackItems = [];
-  let hierItems = [];
-  let has1F81 = false;
-  function pushField() {
-    if (fieldNames.length === 0) return;
-    const src = has1F81 ? curItems : curItems.length > 0 ? curItems : fallbackItems.length > 0 ? fallbackItems : hierItems.length > 0 ? hierItems : curItems;
-    sharedItems.push(src);
+function parseDefinition(def) {
+  const fields = [];
+  let cur = null;
+  function closeField() {
+    if (cur) {
+      if (cur.sharedItems.length > 0 && cur.kind === "string") cur.kind = "indexed";
+      fields.push(cur);
+      cur = null;
+    }
   }
   for (const r of records(def)) {
-    if (r.type === 7041) {
-      pushField();
-      curItems = [];
-      fallbackItems = [];
-      hierItems = [];
-      has1F81 = false;
+    if (r.type === BRT_BEGIN_PCD_FIELD) {
+      closeField();
       const d = r.data;
+      const isSrc = d.length >= 1 ? (d[0] & 4) !== 0 : false;
+      let name = "";
       if (d.length >= 24) {
         const nameLen = readU32(d, 20);
-        if (nameLen > 0 && nameLen < 100 && 24 + nameLen * 2 <= d.length) {
-          fieldNames.push(dec16.decode(d.subarray(24, 24 + nameLen * 2)));
+        if (nameLen > 0 && nameLen < 32768 && 24 + nameLen * 2 <= d.length) {
+          name = dec16.decode(d.subarray(24, 24 + nameLen * 2));
         }
       }
-    } else if (r.type === 31) {
+      cur = {
+        name,
+        isSrc,
+        fNumField: false,
+        fDateInField: false,
+        fHasTextItem: false,
+        kind: "string",
+        sharedItems: []
+      };
+    } else if (r.type === BRT_BEGIN_PCD_ATBL && cur) {
       const d = r.data;
-      if (d.length >= 4) {
-        const slen = readU32(d, 0);
-        if (slen > 0 && slen < 500) {
-          const endOff = 4 + slen * 2;
-          if (endOff <= d.length) {
-            fallbackItems.push(dec16.decode(d.subarray(4, endOff)));
+      const flags = d.length >= 2 ? d[0] | d[1] << 8 : 0;
+      cur.fNumField = (flags & 64) !== 0;
+      cur.fDateInField = (flags & 4) !== 0;
+      cur.fHasTextItem = (flags & 8) !== 0;
+      if (cur.fNumField) cur.kind = "number";
+      else if (cur.fDateInField && !cur.fHasTextItem) cur.kind = "date";
+      else cur.kind = "string";
+    } else if (cur) {
+      const d = r.data;
+      if (r.type === BRT_PCDI_STRING || r.type === BRT_PCDI_STRING2) {
+        if (d.length >= 4) {
+          const slen = readU32(d, 0);
+          if (slen > 0 && slen < 32768 && 4 + slen * 2 <= d.length) {
+            cur.sharedItems.push({ t: "s", v: dec16.decode(d.subarray(4, 4 + slen * 2)) });
           }
         }
+      } else if (r.type === BRT_PCDIDATETIME) {
+        if (d.length >= 8) cur.sharedItems.push({ t: "d", v: decodePCDIDateTime(d, 0) });
+      } else if (r.type === BRT_PCDINUMBER) {
+        if (d.length >= 8) cur.sharedItems.push({ t: "n", v: readF64(d, 0) });
+      } else if (r.type === BRT_PCDIBOOLEAN) {
+        if (d.length >= 1) cur.sharedItems.push({ t: "b", v: d[0] !== 0 });
+      } else if (r.type === BRT_PCDIERROR) {
+        if (d.length >= 1) cur.sharedItems.push({ t: "e", v: errorName(d[0]) });
+      } else if (r.type === BRT_PCDIMISSING) {
+        cur.sharedItems.push({ t: "blank" });
+      } else if (r.type === BRT_BEGIN_PCDIRUN) {
+        decodeRun(d, cur);
       }
-    } else if (r.type === 24 && r.data.length > 4) {
-      const len = readU32(r.data, 0);
-      if (len > 0 && len < 200 && 4 + len * 2 <= r.data.length) {
-        hierItems.push(dec16.decode(r.data.subarray(4, 4 + len * 2)));
-      }
-    } else if (r.type === 8065 && r.data.length >= 6 && (r.data[0] === 32 || r.data[0] === 2)) {
-      has1F81 = true;
-      const d = r.data;
-      if (d[0] === 32) {
-        const count = readU32(d, 2);
-        for (let i = 0, off = 6; i < count && off + 8 <= d.length; i++, off += 8) {
-          curItems.push(
-            formatYMD(
-              d[off] | d[off + 1] << 8,
-              d[off + 2] | d[off + 3] << 8,
-              d[off + 4] | d[off + 5] << 8
-            )
-          );
-        }
-      } else if (d[0] === 2) {
-        const count = readU32(d, 2);
-        for (let i = 0, off = 6; i < count && off + 4 <= d.length; i++) {
-          const slen = readU32(d, off);
-          if (slen > 0 && slen < 500 && off + 4 + slen * 2 <= d.length) {
-            curItems.push(dec16.decode(d.subarray(off + 4, off + 4 + slen * 2)));
-            off += 4 + slen * 2;
-          } else break;
-        }
-      }
-    } else if (r.type === 32 && r.data.length >= 8) {
-      const d = r.data;
-      curItems.push(formatYMD(d[0] | d[1] << 8, d[2] | d[3] << 8, d[4] | d[5] << 8));
     }
   }
-  pushField();
-  const recBodies = [];
+  closeField();
+  return fields;
+}
+function decodeRun(d, cur) {
+  if (d.length < 6) return;
+  const mdx = d[0] | d[1] << 8;
+  const citems = readU32(d, 2);
+  let off = 6;
+  for (let i = 0; i < citems && off + 1 <= d.length; i++) {
+    if (mdx === 2) {
+      if (off + 4 > d.length) break;
+      const slen = readU32(d, off);
+      off += 4;
+      if (slen > 0 && slen < 32768 && off + slen * 2 <= d.length) {
+        cur.sharedItems.push({ t: "s", v: dec16.decode(d.subarray(off, off + slen * 2)) });
+        off += slen * 2;
+      } else break;
+    } else if (mdx === 1) {
+      if (off + 8 > d.length) break;
+      cur.sharedItems.push({ t: "n", v: readF64(d, off) });
+      off += 8;
+    } else if (mdx === 16) {
+      if (off + 1 > d.length) break;
+      cur.sharedItems.push({ t: "e", v: errorName(d[off]) });
+      off += 1;
+    } else if (mdx === 32) {
+      if (off + 8 > d.length) break;
+      cur.sharedItems.push({ t: "d", v: decodePCDIDateTime(d, off) });
+      off += 8;
+    } else break;
+  }
+}
+function errorName(code) {
+  switch (code) {
+    case 0:
+      return "#NULL!";
+    case 7:
+      return "#DIV/0!";
+    case 15:
+      return "#VALUE!";
+    case 23:
+      return "#REF!";
+    case 29:
+      return "#NAME?";
+    case 36:
+      return "#NUM!";
+    case 42:
+      return "#N/A";
+    default:
+      return "#ERR!";
+  }
+}
+function parsePivotCache(name, def, recs) {
+  const builders = parseDefinition(def);
+  const fields = builders.map((b) => ({
+    name: b.name,
+    isSrc: b.isSrc,
+    kind: b.kind,
+    sharedItems: b.sharedItems
+  }));
+  const fieldNames = builders.map((b) => b.name);
+  const srcFields = builders.filter((b) => b.isSrc);
+  const rows = [];
+  let rowCount = 0;
+  let recordCount = 0;
+  let dtRow = null;
+  let dtIdx = 0;
   for (const r of records(recs)) {
-    if (r.type === 8449) break;
-    if (r.type !== 33) continue;
-    recBodies.push(r.data);
-    if (recBodies.length >= 50) break;
-  }
-  const fieldCount = fieldNames.length;
-  const fields = new Array(fieldCount).fill(null);
-  const recOffsets = new Int32Array(recBodies.length);
-  for (let fi = 0; fi < fieldCount; fi++) {
-    for (let ri = 0; ri < recBodies.length; ri++) {
-      const body = recBodies[ri];
-      const off = recOffsets[ri];
-      if (off < 0 || off + 4 > body.length) continue;
-      const len = readU32(body, off);
-      if (len >= 3 && len < 200 && off + 4 + len * 2 <= body.length) {
-        try {
-          const s = dec16.decode(body.subarray(off + 4, off + 4 + len * 2));
-          let valid = true;
-          let alpha = 0;
-          for (let i = 0; i < s.length; i++) {
-            const c = s.charCodeAt(i);
-            if (c < 32 && c !== 10 && c !== 13) {
-              valid = false;
-              break;
-            }
-            if (c >= 65 && c <= 90 || c >= 97 && c <= 122) alpha++;
-          }
-          if (valid && alpha > 0) {
-            fields[fi] = "str";
-            break;
-          }
-        } catch {
-        }
-      }
-    }
-    if (fields[fi] === "str") {
-      for (let ri = 0; ri < recBodies.length; ri++) {
-        const body = recBodies[ri];
-        const off = recOffsets[ri];
-        if (off >= 0) {
-          const len = readU32(body, off);
-          recOffsets[ri] = off + 4 + len * 2;
-        }
-      }
+    if (r.type === BRT_BEGIN_PIVOT_CACHE_RECORDS) {
+      if (r.data.length >= 4) rowCount = readU32(r.data, 0);
       continue;
     }
-    let isF64 = false;
-    for (let ri = 0; ri < recBodies.length; ri++) {
-      const body = recBodies[ri];
-      const off = recOffsets[ri];
-      if (off < 0 || off + 8 > body.length) continue;
-      const f = readF64(body, off);
-      const lo = readU32(body, off);
-      const hi = readU32(body, off + 4);
-      if (isFinite(f) && !isNaN(f) && (lo !== 0 || hi !== 0) && Math.abs(f) > 1e-10 && Math.abs(f) < 1e20 && !(hi === 0 && lo < 1e5)) {
-        isF64 = true;
-        break;
+    if (r.type === BRT_END_PIVOT_CACHE_RECORDS) break;
+    if (r.type === BRT_PC_RECORD) {
+      dtRow = null;
+      const row = decodeRgbRow(r.data, srcFields);
+      if (row) {
+        rows.push(row);
+        recordCount++;
       }
-    }
-    fields[fi] = isF64 ? "f64" : "u32";
-    const sz = isF64 ? 8 : 4;
-    for (let ri = 0; ri < recBodies.length; ri++) {
-      if (recOffsets[ri] >= 0) recOffsets[ri] += sz;
-    }
-  }
-  for (let i = 1; i < fields.length - 1; i++) {
-    if (fields[i] === "u32" && fields[i - 1] === "f64" && fields[i + 1] === "f64")
-      fields[i] = "f64";
-  }
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (let i = 1; i < fields.length - 1; i++) {
-      if (fields[i] === "u32" && fields[i - 1] === "f64" && fields[i + 1] === "f64") {
-        fields[i] = "f64";
-        changed = true;
+    } else if (r.type === BRT_PC_RECORD_DT) {
+      dtRow = [];
+      dtIdx = 0;
+    } else if (dtRow) {
+      const cell = decodeDtCell(r, srcFields[dtIdx]);
+      if (cell) dtRow.push(cell);
+      dtIdx++;
+      if (dtIdx >= srcFields.length) {
+        rows.push(dtRow);
+        recordCount++;
+        dtRow = null;
       }
     }
   }
-  let lastStr = -1;
-  for (let i = 0; i < fields.length; i++) {
-    if (fields[i] === "str") lastStr = i;
-  }
-  for (const body of recBodies) {
-    let consumed = 0;
-    for (let i = 0; i < fields.length; i++) {
-      if (fields[i] === "str") {
-        if (consumed + 4 > body.length) {
-          consumed = -1;
-          break;
-        }
-        const len = readU32(body, consumed);
-        consumed += len >= 3 && consumed + 4 + len * 2 <= body.length ? 4 + len * 2 : 4;
+  return { name, fieldNames, fields, rows, rowCount, recordCount };
+}
+function decodeRgbRow(d, srcFields) {
+  const out = [];
+  let off = 0;
+  for (const f of srcFields) {
+    if (f.sharedItems.length > 0) {
+      if (off + 4 > d.length) {
+        out.push({ t: "blank" });
+        continue;
+      }
+      const idx = readU32(d, off);
+      off += 4;
+      out.push(f.sharedItems[idx] ?? { t: "blank" });
+    } else if (f.kind === "number") {
+      if (off + 8 > d.length) {
+        out.push({ t: "blank" });
+        continue;
+      }
+      out.push({ t: "n", v: readF64(d, off) });
+      off += 8;
+    } else if (f.kind === "date") {
+      if (off + 8 > d.length) {
+        out.push({ t: "blank" });
+        continue;
+      }
+      out.push({ t: "d", v: decodePCDIDateTime(d, off) });
+      off += 8;
+    } else if (f.kind === "string") {
+      if (off + 4 > d.length) {
+        out.push({ t: "blank" });
+        continue;
+      }
+      const slen = readU32(d, off);
+      if (slen > 0 && slen < 32768 && off + 4 + slen * 2 <= d.length) {
+        out.push({ t: "s", v: dec16.decode(d.subarray(off + 4, off + 4 + slen * 2)) });
+        off += 4 + slen * 2;
       } else {
-        consumed += fields[i] === "f64" ? 8 : 4;
-      }
-    }
-    if (consumed < 0) continue;
-    const deficit = body.length - consumed;
-    if (deficit > 0 && deficit % 4 === 0) {
-      const mis = deficit / 4;
-      let converted = 0;
-      for (let i = fields.length - 1; i > lastStr && converted < mis; i--) {
-        if (fields[i] === "u32") {
-          fields[i] = "f64";
-          converted++;
-        }
-      }
-    }
-  }
-  if (recBodies.length > 0) {
-    let best = fields.length;
-    for (let check = fields.length; check >= 1; check--) {
-      let allFit = true;
-      for (const body of recBodies) {
-        let off = 0;
-        for (let i = 0; i < check && off <= body.length; i++) {
-          if (fields[i] === "str") {
-            if (off + 4 > body.length) {
-              allFit = false;
-              break;
-            }
-            const len = readU32(body, off);
-            off += len >= 3 && off + 4 + len * 2 <= body.length ? 4 + len * 2 : 4;
-          } else {
-            off += fields[i] === "f64" ? 8 : 4;
-          }
-        }
-        if (off > body.length) {
-          allFit = false;
-          break;
-        }
-      }
-      if (allFit) {
-        best = check;
-        break;
-      }
-    }
-    if (best < fields.length) fields.length = best;
-  }
-  const rows = [];
-  for (const r of records(recs)) {
-    if (r.type === 8449) break;
-    if (r.type !== 33) continue;
-    const d = r.data;
-    const values = [];
-    let off = 0;
-    let fi = 0;
-    while (off < d.length && fi < fields.length) {
-      const ft = fields[fi];
-      if (ft === "str") {
-        const len = readU32(d, off);
-        if (len >= 3 && off + 4 + len * 2 <= d.length) {
-          values.push(dec16.decode(d.subarray(off + 4, off + 4 + len * 2)));
-          off += 4 + len * 2;
-        } else {
-          values.push(null);
-          off += 4;
-        }
-      } else if (ft === "f64") {
-        if (off + 8 <= d.length) {
-          const f = readF64(d, off);
-          values.push(
-            f === 0 ? 0 : Math.abs(f) >= 1 ? parseFloat(f.toFixed(4)) : parseFloat(f.toFixed(8))
-          );
-          off += 8;
-        } else {
-          values.push(null);
-          off += 4;
-        }
-      } else {
-        if (off + 4 <= d.length) {
-          const v = readU32(d, off);
-          const si = fi < sharedItems.length ? sharedItems[fi] : null;
-          if (si && si.length > 0 && v < si.length && si[v] !== null) {
-            values.push(si[v]);
-          } else {
-            values.push(v);
-          }
-        } else values.push(null);
+        out.push({ t: "blank" });
         off += 4;
       }
-      fi++;
+    } else {
+      if (off + 4 > d.length) {
+        out.push({ t: "blank" });
+        continue;
+      }
+      out.push({ t: "blank" });
+      off += 4;
     }
-    rows.push(values);
   }
-  if (rows.length > 0) {
-    let lastPopulated = 0;
-    for (let ri = 0; ri < Math.min(5, rows.length); ri++) {
-      for (let fi = rows[ri].length - 1; fi >= 0; fi--) {
-        if (rows[ri][fi] !== void 0 && fi > lastPopulated) lastPopulated = fi;
+  return out;
+}
+function decodeDtCell(r, f) {
+  if (!f) return { t: "blank" };
+  const d = r.data;
+  if (r.type === BRT_PCDI_STRING || r.type === BRT_PCDI_STRING2) {
+    if (d.length >= 4) {
+      const slen = readU32(d, 0);
+      if (slen > 0 && slen < 32768 && 4 + slen * 2 <= d.length)
+        return { t: "s", v: dec16.decode(d.subarray(4, 4 + slen * 2)) };
+    }
+    return { t: "blank" };
+  }
+  if (r.type === BRT_PCDINUMBER) return d.length >= 8 ? { t: "n", v: readF64(d, 0) } : { t: "blank" };
+  if (r.type === BRT_PCDIDATETIME) return d.length >= 8 ? { t: "d", v: decodePCDIDateTime(d, 0) } : { t: "blank" };
+  if (r.type === BRT_PCDIBOOLEAN) return d.length >= 1 ? { t: "b", v: d[0] !== 0 } : { t: "blank" };
+  if (r.type === BRT_PCDIERROR) return d.length >= 1 ? { t: "e", v: errorName(d[0]) } : { t: "blank" };
+  if (r.type === BRT_PCDIMISSING) return { t: "blank" };
+  return { t: "blank" };
+}
+function* streamPivotRows(def, recs) {
+  const builders = parseDefinition(def);
+  const srcFields = builders.filter((b) => b.isSrc);
+  let dtRow = null;
+  let dtIdx = 0;
+  for (const r of records(recs)) {
+    if (r.type === BRT_BEGIN_PIVOT_CACHE_RECORDS) continue;
+    if (r.type === BRT_END_PIVOT_CACHE_RECORDS) break;
+    if (r.type === BRT_PC_RECORD) {
+      dtRow = null;
+      const row = decodeRgbRow(r.data, srcFields);
+      if (row) yield row;
+    } else if (r.type === BRT_PC_RECORD_DT) {
+      dtRow = [];
+      dtIdx = 0;
+    } else if (dtRow) {
+      const cell = decodeDtCell(r, srcFields[dtIdx]);
+      if (cell) dtRow.push(cell);
+      dtIdx++;
+      if (dtIdx >= srcFields.length) {
+        yield dtRow;
+        dtRow = null;
       }
     }
-    if (lastPopulated + 1 < fieldNames.length) fieldNames.length = lastPopulated + 1;
   }
-  return {
-    name,
-    fieldNames,
-    rows,
-    rowCount: recBodies.length > 50 ? recBodies.length : rows.length
-  };
 }
 
 // src/handle.ts
@@ -1215,6 +1216,22 @@ async function openXlsb(data, options) {
     }
     await tick();
   }
+  const pivotDefs = [];
+  if (opts.parsePivotCaches) {
+    const defPaths = Object.keys(zip).filter((k) => /^xl\/pivotCache\/pivotCacheDefinition\d+\.bin$/.test(k)).sort((a, b) => {
+      const na = parseInt(a.match(/(\d+)\.bin$/)[1], 10);
+      const nb = parseInt(b.match(/(\d+)\.bin$/)[1], 10);
+      return na - nb;
+    });
+    for (const defPath of defPaths) {
+      const num = defPath.match(/(\d+)\.bin$/)[1];
+      const def = zip[defPath];
+      const recs = zip[`xl/pivotCache/pivotCacheRecords${num}.bin`];
+      if (def && recs) {
+        pivotDefs.push({ name: `PivotCache${num}`, def, recs });
+      }
+    }
+  }
   const sheetBytes = sheetNames.map((_, i) => {
     return zip[`xl/worksheets/sheet${i + 1}.bin`] ?? null;
   });
@@ -1222,6 +1239,26 @@ async function openXlsb(data, options) {
     sheetNames,
     sharedStrings,
     styles,
+    pivotCaches: pivotDefs.map((d) => {
+      try {
+        const defs = parseDefinition(d.def);
+        const pcs = {
+          name: d.name,
+          fieldNames: defs.map((b) => b.name),
+          fields: defs.map((b) => ({ name: b.name, isSrc: b.isSrc, kind: b.kind, sharedItems: b.sharedItems })),
+          rowCount: 0
+        };
+        for (const r of records(d.recs)) {
+          if (r.type === BRT_BEGIN_PIVOT_CACHE_RECORDS && r.data.length >= 4) {
+            pcs.rowCount = readU32(r.data, 0);
+            break;
+          }
+        }
+        return pcs;
+      } catch {
+        return { name: d.name, fieldNames: [], fields: [], rowCount: 0 };
+      }
+    }),
     async *iterSheetRows(sheetIndex, iterOpts = {}) {
       const bytes = sheetBytes[sheetIndex];
       if (!bytes) return;
@@ -1288,6 +1325,24 @@ async function openXlsb(data, options) {
       for await (const row of this.iterSheetRows(sheetIndex, iterOpts)) rows.push(row);
       const totalCells = rows.reduce((a, r) => a + Object.keys(r.cols).length, 0);
       return { name, rows, totalCells };
+    },
+    async *iterPivotCacheRows(indexOrName, iterOpts = {}) {
+      const idx = typeof indexOrName === "number" ? indexOrName : pivotDefs.findIndex((d2) => d2.name === indexOrName);
+      const d = pivotDefs[idx];
+      if (!d) return;
+      const maxRows = iterOpts.maxRows;
+      let yielded = 0;
+      for (const row of streamPivotRows(d.def, d.recs)) {
+        yield row;
+        yielded++;
+        if (maxRows !== void 0 && yielded >= maxRows) return;
+      }
+    },
+    async collectPivotCache(indexOrName) {
+      const idx = typeof indexOrName === "number" ? indexOrName : pivotDefs.findIndex((d2) => d2.name === indexOrName);
+      const d = pivotDefs[idx];
+      if (!d) throw new Error(`Pivot cache not found: ${indexOrName}`);
+      return parsePivotCache(d.name, d.def, d.recs);
     }
   };
   return handle;
@@ -1371,19 +1426,25 @@ async function parseXlsb(data, options) {
     }
   }
   if (parsePivotCaches) {
-    const pcd1 = zip["xl/pivotCache/pivotCacheDefinition1.bin"];
-    const pcd2 = zip["xl/pivotCache/pivotCacheDefinition2.bin"];
-    const pcr1 = zip["xl/pivotCache/pivotCacheRecords1.bin"];
-    const pcr2 = zip["xl/pivotCache/pivotCacheRecords2.bin"];
-    if (pcd1 && pcr1) {
-      onProgress?.("Pivot cache 1...", 33);
-      out.pivotCaches.push(parsePivotCache("PivotCache1", pcd1, pcr1));
-      await tick2();
-    }
-    if (pcd2 && pcr2) {
-      onProgress?.("Pivot cache 2...", 34);
-      out.pivotCaches.push(parsePivotCache("PivotCache2", pcd2, pcr2));
-      await tick2();
+    const cacheDefPaths = Object.keys(zip).filter((k) => /^xl\/pivotCache\/pivotCacheDefinition\d+\.bin$/.test(k)).sort((a, b) => {
+      const na = parseInt(a.match(/(\d+)\.bin$/)[1], 10);
+      const nb = parseInt(b.match(/(\d+)\.bin$/)[1], 10);
+      return na - nb;
+    });
+    for (let ci = 0; ci < cacheDefPaths.length; ci++) {
+      const defPath = cacheDefPaths[ci];
+      const num = defPath.match(/(\d+)\.bin$/)[1];
+      const recPath = `xl/pivotCache/pivotCacheRecords${num}.bin`;
+      const def = zip[defPath];
+      const recs = zip[recPath];
+      if (def && recs) {
+        onProgress?.(`Pivot cache ${num}...`, 33 + ci);
+        try {
+          out.pivotCaches.push(parsePivotCache(`PivotCache${num}`, def, recs));
+        } catch {
+        }
+        await tick2();
+      }
     }
   }
   if (dumpBinaries) {
