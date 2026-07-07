@@ -1,4 +1,18 @@
 import { zipSync, type ZipInput } from 'fflate';
+import {
+  BRT_BEGIN_PCD_FIELD,
+  BRT_BEGIN_PCD_ATBL,
+  BRT_BEGIN_PCDIRUN,
+  BRT_PCDI_STRING,
+  BRT_PCDIDATETIME,
+  BRT_PCDINUMBER,
+  BRT_PCDIBOOLEAN,
+  BRT_PCDIERROR,
+  BRT_PCDIMISSING,
+  BRT_BEGIN_PIVOT_CACHE_RECORDS,
+  BRT_PC_RECORD,
+  BRT_END_PIVOT_CACHE_RECORDS,
+} from '../src/record-stream.js';
 
 // ---- primitive encoders ----
 
@@ -399,4 +413,97 @@ export function workbookBinRecordLegacy(sheetNames: string[]): Uint8Array {
     );
   });
   return concat(...parts);
+}
+
+// ---- pivot-cache fixture builders ----
+
+export function pcdField(
+  name: string,
+  opts: { isSrc?: boolean; fNum?: boolean; fDate?: boolean; fText?: boolean; hasItems?: boolean } = {},
+): Uint8Array {
+  const hdr = new Uint8Array(20);
+  if (opts.isSrc) hdr[0] |= 0x04;
+  return rec(BRT_BEGIN_PCD_FIELD, concat(hdr, u32(name.length), u16le(name)));
+}
+
+export function pcdAtbl(opts: {
+  fNum?: boolean; fDate?: boolean; fText?: boolean; citems?: number;
+} = {}): Uint8Array {
+  const flags = new Uint8Array(2);
+  if (opts.fNum) flags[0] |= 0x40;
+  if (opts.fDate) flags[0] |= 0x04;
+  if (opts.fText) flags[0] |= 0x08;
+  if (opts.fText) flags[0] |= 0x01;
+  return rec(BRT_BEGIN_PCD_ATBL, concat(flags, u32(opts.citems ?? 0)));
+}
+
+export function pcdFieldFull(
+  name: string,
+  opts: { isSrc?: boolean; fNum?: boolean; fDate?: boolean; fText?: boolean } = {},
+): Uint8Array {
+  return concat(pcdField(name, opts), pcdAtbl({ ...opts, citems: 0 }));
+}
+
+export function pcdStr(s: string): Uint8Array {
+  return rec(BRT_PCDI_STRING, concat(u32(s.length), u16le(s)));
+}
+
+export function pcdDate(yr: number, mon: number, dom: number, hr = 0, min = 0, sec = 0): Uint8Array {
+  const b = new Uint8Array(8);
+  b[0] = yr & 0xff; b[1] = (yr >> 8) & 0xff;
+  b[2] = mon & 0xff; b[3] = (mon >> 8) & 0xff;
+  b[4] = dom & 0xff; b[5] = hr & 0xff; b[6] = min & 0xff; b[7] = sec & 0xff;
+  return rec(BRT_PCDIDATETIME, b);
+}
+
+export function pcdNum(v: number): Uint8Array {
+  return rec(BRT_PCDINUMBER, f64(v));
+}
+
+export function pcdBool(v: boolean): Uint8Array {
+  return rec(BRT_PCDIBOOLEAN, new Uint8Array([v ? 1 : 0]));
+}
+
+export function pcdErr(code: number): Uint8Array {
+  return rec(BRT_PCDIERROR, new Uint8Array([code]));
+}
+
+export function pcdMissing(): Uint8Array {
+  return rec(BRT_PCDIMISSING, new Uint8Array(0));
+}
+
+export function pcdRun(
+  mdSxoper: number,
+  items: (string | number | [number, number, number, number?, number?, number?])[],
+): Uint8Array {
+  const body: Uint8Array[] = [new Uint8Array([mdSxoper & 0xff, (mdSxoper >> 8) & 0xff]), u32(items.length)];
+  for (const it of items) {
+    if (mdSxoper === 0x02) {
+      const s = String(it);
+      body.push(concat(u32(s.length), u16le(s)));
+    } else if (mdSxoper === 0x01) {
+      body.push(f64(it as number));
+    } else if (mdSxoper === 0x10) {
+      body.push(new Uint8Array([it as number]));
+    } else if (mdSxoper === 0x20) {
+      const [y, m, d, h = 0, mi = 0, s = 0] = it as [number, number, number, number?, number?, number?];
+      const b = new Uint8Array(8);
+      b[0] = y & 0xff; b[1] = (y >> 8) & 0xff; b[2] = m & 0xff; b[3] = (m >> 8) & 0xff;
+      b[4] = d & 0xff; b[5] = h & 0xff; b[6] = mi & 0xff; b[7] = s & 0xff;
+      body.push(b);
+    }
+  }
+  return rec(BRT_BEGIN_PCDIRUN, concat(...body));
+}
+
+export function pcRecordsHeader(crecords: number): Uint8Array {
+  return rec(BRT_BEGIN_PIVOT_CACHE_RECORDS, u32(crecords));
+}
+
+export function pcRecordsEnd(): Uint8Array {
+  return rec(BRT_END_PIVOT_CACHE_RECORDS, new Uint8Array(0));
+}
+
+export function pcRecord(rgbParts: Uint8Array[]): Uint8Array {
+  return rec(BRT_PC_RECORD, concat(...rgbParts));
 }
