@@ -96,6 +96,13 @@ export interface ParsedXlsb {
   };
 }
 
+export interface PivotCacheSummary {
+  name: string;
+  fieldNames: string[];
+  fields: PivotCacheField[];
+  rowCount: number;
+}
+
 // Raised when maxZipBytes or maxRowsPerSheet caps are exceeded. Distinct
 // from parse errors so consumers can differentiate "too big" from "broken".
 export class XlsbSizeError extends Error {
