@@ -2,7 +2,7 @@ import type { PivotCacheTable, PivotCacheField, PivotCacheCell } from './types.j
 import {
   records, readU32, readF64, dec16,
   BRT_BEGIN_PCD_FIELD, BRT_BEGIN_PCD_ATBL, BRT_BEGIN_PCDIRUN,
-  BRT_PCDI_STRING,
+  BRT_PCDI_STRING, BRT_PCDI_STRING2,
   BRT_PCDIDATETIME, BRT_PCDINUMBER,
   BRT_PCDIBOOLEAN, BRT_PCDIERROR, BRT_PCDIMISSING,
   BRT_BEGIN_PIVOT_CACHE_RECORDS, BRT_PC_RECORD, BRT_PC_RECORD_DT,
@@ -73,7 +73,7 @@ function parseDefinition(def: Uint8Array): FieldBuilder[] {
       else cur.kind = 'string';
     } else if (cur) {
       const d = r.data;
-      if (r.type === BRT_PCDI_STRING) {
+      if (r.type === BRT_PCDI_STRING || r.type === BRT_PCDI_STRING2) {
         if (d.length >= 4) {
           const slen = readU32(d, 0);
           if (slen > 0 && slen < 32768 && 4 + slen * 2 <= d.length) {
@@ -210,7 +210,7 @@ function decodeRgbRow(d: Uint8Array, srcFields: FieldBuilder[]): PivotCacheCell[
 function decodeDtCell(r: { type: number; data: Uint8Array }, f: FieldBuilder | undefined): PivotCacheCell | null {
   if (!f) return { t: 'blank' };
   const d = r.data;
-  if (r.type === BRT_PCDI_STRING) {
+  if (r.type === BRT_PCDI_STRING || r.type === BRT_PCDI_STRING2) {
     if (d.length >= 4) {
       const slen = readU32(d, 0);
       if (slen > 0 && slen < 32768 && 4 + slen * 2 <= d.length)
@@ -224,4 +224,30 @@ function decodeDtCell(r: { type: number; data: Uint8Array }, f: FieldBuilder | u
   if (r.type === BRT_PCDIERROR) return d.length >= 1 ? { t: 'e', v: errorName(d[0]) } : { t: 'blank' };
   if (r.type === BRT_PCDIMISSING) return { t: 'blank' };
   return { t: 'blank' };
+}
+
+/** Exported for streaming use by `openXlsb`. */
+export { parseDefinition };
+
+export function* streamPivotRows(def: Uint8Array, recs: Uint8Array): Generator<PivotCacheCell[]> {
+  const builders = parseDefinition(def);
+  const srcFields = builders.filter(b => b.isSrc);
+  let dtRow: PivotCacheCell[] | null = null;
+  let dtIdx = 0;
+  for (const r of records(recs)) {
+    if (r.type === BRT_BEGIN_PIVOT_CACHE_RECORDS) continue;
+    if (r.type === BRT_END_PIVOT_CACHE_RECORDS) break;
+    if (r.type === BRT_PC_RECORD) {
+      dtRow = null;
+      const row = decodeRgbRow(r.data, srcFields);
+      if (row) yield row;
+    } else if (r.type === BRT_PC_RECORD_DT) {
+      dtRow = []; dtIdx = 0;
+    } else if (dtRow) {
+      const cell = decodeDtCell(r, srcFields[dtIdx]);
+      if (cell) dtRow.push(cell);
+      dtIdx++;
+      if (dtIdx >= srcFields.length) { yield dtRow; dtRow = null; }
+    }
+  }
 }
