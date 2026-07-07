@@ -66,7 +66,13 @@ export interface BinaryDump {
 }
 
 export type PivotCacheFieldKind =
-  | 'indexed' | 'number' | 'date' | 'string' | 'boolean' | 'error' | 'blank';
+  | 'indexed'
+  | 'number'
+  | 'date'
+  | 'string'
+  | 'boolean'
+  | 'error'
+  | 'blank';
 
 export interface PivotCacheField {
   name: string;

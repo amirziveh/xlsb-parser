@@ -128,7 +128,7 @@ export async function parseXlsb(
   // look for its matching records part by numeric suffix.
   if (parsePivotCaches) {
     const cacheDefPaths = Object.keys(zip)
-      .filter(k => /^xl\/pivotCache\/pivotCacheDefinition\d+\.bin$/.test(k))
+      .filter((k) => /^xl\/pivotCache\/pivotCacheDefinition\d+\.bin$/.test(k))
       .sort((a, b) => {
         const na = parseInt(a.match(/(\d+)\.bin$/)![1], 10);
         const nb = parseInt(b.match(/(\d+)\.bin$/)![1], 10);

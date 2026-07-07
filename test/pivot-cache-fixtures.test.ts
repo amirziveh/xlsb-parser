@@ -1,8 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { parseXlsb } from '../src/index.js';
 import {
-  buildXlsb, pcdFieldFull, pcdStr, pcdDate, f64,
-  pcRecordsHeader, pcRecord, pcRecordsEnd, concat, u32,
+  buildXlsb,
+  pcdFieldFull,
+  pcdStr,
+  pcdDate,
+  f64,
+  pcRecordsHeader,
+  pcRecord,
+  pcRecordsEnd,
+  concat,
+  u32,
 } from './helpers';
 
 function section38Def(): Uint8Array {
@@ -31,7 +39,9 @@ function section38Recs(): Uint8Array {
 describe('MS-XLSB §3.8 worked example', () => {
   it('decodes a 5-field cache with indexed string, date, and number fields', async () => {
     const xlsb = buildXlsb({
-      sheetNames: ['S'], sharedStrings: [], sheetRecords: [],
+      sheetNames: ['S'],
+      sharedStrings: [],
+      sheetRecords: [],
       extraEntries: {
         'xl/pivotCache/pivotCacheDefinition1.bin': section38Def(),
         'xl/pivotCache/pivotCacheRecords1.bin': section38Recs(),
@@ -39,8 +49,20 @@ describe('MS-XLSB §3.8 worked example', () => {
     });
     const wb = await parseXlsb(xlsb, { parsePivotCaches: true });
     const pc = wb.pivotCaches[0];
-    expect(pc.fieldNames).toEqual(['CustomerName', 'OrderDate', 'ProductName', 'UnitPrice', 'Quantity']);
-    expect(pc.fields.map(f => f.kind)).toEqual(['indexed', 'date', 'indexed', 'number', 'number']);
+    expect(pc.fieldNames).toEqual([
+      'CustomerName',
+      'OrderDate',
+      'ProductName',
+      'UnitPrice',
+      'Quantity',
+    ]);
+    expect(pc.fields.map((f) => f.kind)).toEqual([
+      'indexed',
+      'date',
+      'indexed',
+      'number',
+      'number',
+    ]);
     expect(pc.fields[0].sharedItems.length).toBe(2);
     expect(pc.fields[0].sharedItems[0]).toEqual({ t: 's', v: 'Great Lakes Food Market' });
     expect(pc.fields[1].sharedItems[0]).toEqual({ t: 'd', v: '1997-05-06' });

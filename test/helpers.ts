@@ -419,16 +419,22 @@ export function workbookBinRecordLegacy(sheetNames: string[]): Uint8Array {
 
 export function pcdField(
   name: string,
-  opts: { isSrc?: boolean; fNum?: boolean; fDate?: boolean; fText?: boolean; hasItems?: boolean } = {},
+  opts: {
+    isSrc?: boolean;
+    fNum?: boolean;
+    fDate?: boolean;
+    fText?: boolean;
+    hasItems?: boolean;
+  } = {},
 ): Uint8Array {
   const hdr = new Uint8Array(20);
   if (opts.isSrc) hdr[0] |= 0x04;
   return rec(BRT_BEGIN_PCD_FIELD, concat(hdr, u32(name.length), u16le(name)));
 }
 
-export function pcdAtbl(opts: {
-  fNum?: boolean; fDate?: boolean; fText?: boolean; citems?: number;
-} = {}): Uint8Array {
+export function pcdAtbl(
+  opts: { fNum?: boolean; fDate?: boolean; fText?: boolean; citems?: number } = {},
+): Uint8Array {
   const flags = new Uint8Array(2);
   if (opts.fNum) flags[0] |= 0x40;
   if (opts.fDate) flags[0] |= 0x04;
@@ -448,11 +454,23 @@ export function pcdStr(s: string): Uint8Array {
   return rec(BRT_PCDI_STRING, concat(u32(s.length), u16le(s)));
 }
 
-export function pcdDate(yr: number, mon: number, dom: number, hr = 0, min = 0, sec = 0): Uint8Array {
+export function pcdDate(
+  yr: number,
+  mon: number,
+  dom: number,
+  hr = 0,
+  min = 0,
+  sec = 0,
+): Uint8Array {
   const b = new Uint8Array(8);
-  b[0] = yr & 0xff; b[1] = (yr >> 8) & 0xff;
-  b[2] = mon & 0xff; b[3] = (mon >> 8) & 0xff;
-  b[4] = dom & 0xff; b[5] = hr & 0xff; b[6] = min & 0xff; b[7] = sec & 0xff;
+  b[0] = yr & 0xff;
+  b[1] = (yr >> 8) & 0xff;
+  b[2] = mon & 0xff;
+  b[3] = (mon >> 8) & 0xff;
+  b[4] = dom & 0xff;
+  b[5] = hr & 0xff;
+  b[6] = min & 0xff;
+  b[7] = sec & 0xff;
   return rec(BRT_PCDIDATETIME, b);
 }
 
@@ -476,7 +494,10 @@ export function pcdRun(
   mdSxoper: number,
   items: (string | number | [number, number, number, number?, number?, number?])[],
 ): Uint8Array {
-  const body: Uint8Array[] = [new Uint8Array([mdSxoper & 0xff, (mdSxoper >> 8) & 0xff]), u32(items.length)];
+  const body: Uint8Array[] = [
+    new Uint8Array([mdSxoper & 0xff, (mdSxoper >> 8) & 0xff]),
+    u32(items.length),
+  ];
   for (const it of items) {
     if (mdSxoper === 0x02) {
       const s = String(it);
@@ -486,10 +507,23 @@ export function pcdRun(
     } else if (mdSxoper === 0x10) {
       body.push(new Uint8Array([it as number]));
     } else if (mdSxoper === 0x20) {
-      const [y, m, d, h = 0, mi = 0, s = 0] = it as [number, number, number, number?, number?, number?];
+      const [y, m, d, h = 0, mi = 0, s = 0] = it as [
+        number,
+        number,
+        number,
+        number?,
+        number?,
+        number?,
+      ];
       const b = new Uint8Array(8);
-      b[0] = y & 0xff; b[1] = (y >> 8) & 0xff; b[2] = m & 0xff; b[3] = (m >> 8) & 0xff;
-      b[4] = d & 0xff; b[5] = h & 0xff; b[6] = mi & 0xff; b[7] = s & 0xff;
+      b[0] = y & 0xff;
+      b[1] = (y >> 8) & 0xff;
+      b[2] = m & 0xff;
+      b[3] = (m >> 8) & 0xff;
+      b[4] = d & 0xff;
+      b[5] = h & 0xff;
+      b[6] = mi & 0xff;
+      b[7] = s & 0xff;
       body.push(b);
     }
   }

@@ -8,24 +8,33 @@
 // O(cells_per_row) instead of O(total_rows).
 
 import { unzipSync } from 'fflate';
-import type { ParseOptions, ProgressCallback, ParsedRow, Sheet, StylesTable, PivotCacheCell, PivotCacheTable, PivotCacheSummary } from './types.js';
-import { XlsbSizeError } from './types.js';
+import { parseDefinition, parsePivotCache, streamPivotRows } from './pivot-cache.js';
 import {
-  records,
-  readU16,
-  readU32,
-  BRT_ROW_HEADER,
+  BRT_BEGIN_PIVOT_CACHE_RECORDS,
   BRT_CELL_BLANK,
   BRT_FMLA_ERROR,
+  BRT_ROW_HEADER,
   BRT_SHORT_BLANK,
   BRT_SHORT_ISST,
-  BRT_BEGIN_PIVOT_CACHE_RECORDS,
+  readU16,
+  readU32,
+  records,
 } from './record-stream.js';
-import { parseWorkbook } from './workbook.js';
 import { parseSharedStrings } from './shared-strings.js';
+import { applyDateMeta, readCell, readShortCell } from './sheet.js';
 import { parseStyles } from './styles.js';
-import { readCell, readShortCell, applyDateMeta } from './sheet.js';
-import { parseDefinition, parsePivotCache, streamPivotRows } from './pivot-cache.js';
+import type {
+  ParsedRow,
+  ParseOptions,
+  PivotCacheCell,
+  PivotCacheSummary,
+  PivotCacheTable,
+  ProgressCallback,
+  Sheet,
+  StylesTable,
+} from './types.js';
+import { XlsbSizeError } from './types.js';
+import { parseWorkbook } from './workbook.js';
 
 export interface XlsbHandle {
   sheetNames: string[];
@@ -120,7 +129,7 @@ export async function openXlsb(
   const pivotDefs: { name: string; def: Uint8Array; recs: Uint8Array }[] = [];
   if (opts.parsePivotCaches) {
     const defPaths = Object.keys(zip)
-      .filter(k => /^xl\/pivotCache\/pivotCacheDefinition\d+\.bin$/.test(k))
+      .filter((k) => /^xl\/pivotCache\/pivotCacheDefinition\d+\.bin$/.test(k))
       .sort((a, b) => {
         const na = parseInt(a.match(/(\d+)\.bin$/)![1], 10);
         const nb = parseInt(b.match(/(\d+)\.bin$/)![1], 10);
@@ -145,13 +154,18 @@ export async function openXlsb(
     sheetNames,
     sharedStrings,
     styles,
-    pivotCaches: pivotDefs.map(d => {
+    pivotCaches: pivotDefs.map((d) => {
       try {
         const defs = parseDefinition(d.def);
         const pcs: PivotCacheSummary = {
           name: d.name,
-          fieldNames: defs.map(b => b.name),
-          fields: defs.map(b => ({ name: b.name, isSrc: b.isSrc, kind: b.kind, sharedItems: b.sharedItems })),
+          fieldNames: defs.map((b) => b.name),
+          fields: defs.map((b) => ({
+            name: b.name,
+            isSrc: b.isSrc,
+            kind: b.kind,
+            sharedItems: b.sharedItems,
+          })),
           rowCount: 0,
         };
         for (const r of records(d.recs)) {
@@ -246,9 +260,10 @@ export async function openXlsb(
       indexOrName: number | string,
       iterOpts: IterOptions = {},
     ): AsyncGenerator<PivotCacheCell[]> {
-      const idx = typeof indexOrName === 'number'
-        ? indexOrName
-        : pivotDefs.findIndex(d => d.name === indexOrName);
+      const idx =
+        typeof indexOrName === 'number'
+          ? indexOrName
+          : pivotDefs.findIndex((d) => d.name === indexOrName);
       const d = pivotDefs[idx];
       if (!d) return;
       const maxRows = iterOpts.maxRows;
@@ -260,9 +275,10 @@ export async function openXlsb(
       }
     },
     async collectPivotCache(indexOrName: number | string): Promise<PivotCacheTable> {
-      const idx = typeof indexOrName === 'number'
-        ? indexOrName
-        : pivotDefs.findIndex(d => d.name === indexOrName);
+      const idx =
+        typeof indexOrName === 'number'
+          ? indexOrName
+          : pivotDefs.findIndex((d) => d.name === indexOrName);
       const d = pivotDefs[idx];
       if (!d) throw new Error(`Pivot cache not found: ${indexOrName}`);
       return parsePivotCache(d.name, d.def, d.recs);

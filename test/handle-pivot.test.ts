@@ -1,15 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import { openXlsb } from '../src/index.js';
 import {
-  buildXlsb, pcdFieldFull, pcdStr,
-  pcRecordsHeader, pcRecord, pcRecordsEnd,
-  concat, u32,
+  buildXlsb,
+  pcdFieldFull,
+  pcdStr,
+  pcRecordsHeader,
+  pcRecord,
+  pcRecordsEnd,
+  concat,
+  u32,
 } from './helpers';
 
 function pcXlsb(): Uint8Array {
   const def = concat(
     pcdFieldFull('Region', { isSrc: true, fText: true }),
-    pcdStr('North'), pcdStr('South'),
+    pcdStr('North'),
+    pcdStr('South'),
   );
   const recs = concat(
     pcRecordsHeader(3),
@@ -19,7 +25,9 @@ function pcXlsb(): Uint8Array {
     pcRecordsEnd(),
   );
   return buildXlsb({
-    sheetNames: ['S'], sharedStrings: [], sheetRecords: [],
+    sheetNames: ['S'],
+    sharedStrings: [],
+    sheetRecords: [],
     extraEntries: {
       'xl/pivotCache/pivotCacheDefinition1.bin': def,
       'xl/pivotCache/pivotCacheRecords1.bin': recs,
