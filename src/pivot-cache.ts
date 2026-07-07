@@ -182,7 +182,7 @@ function decodeRgbRow(d: Uint8Array, srcFields: FieldBuilder[]): PivotCacheCell[
   const out: PivotCacheCell[] = [];
   let off = 0;
   for (const f of srcFields) {
-    if (f.kind === 'indexed') {
+    if (f.sharedItems.length > 0) {
       if (off + 4 > d.length) { out.push({ t: 'blank' }); continue; }
       const idx = readU32(d, off); off += 4;
       out.push(f.sharedItems[idx] ?? { t: 'blank' });

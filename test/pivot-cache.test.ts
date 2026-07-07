@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { parseXlsb } from '../src/index.js';
 import {
   buildXlsb, rec, u32, u16le, concat, pcdFieldFull, pcdStr, pcdDate, pcdNum,
+  pcdRun, pcdErr, pcRecord, f64,
   pcRecordsHeader, pcRecordsEnd,
 } from './helpers';
+import { BRT_PCDI_STRING } from '../src/record-stream.js';
 
 // Minimal pivot-cache fixtures. The current pivot-cache decoder is heuristic
 // (P5 of the roadmap will rewrite it spec-first), so these tests only lock
@@ -45,12 +47,12 @@ describe('pivot cache parsing', () => {
   });
 
   it('parses up to the 0x2101 end-of-records marker', async () => {
-    const def = pivotFieldRecordFixed('Field');
+    const def = concat(pcdFieldFull('Field', { isSrc: true, fText: true }));
     const recs = concat(
-      pivotRecordU32(100),
-      pivotRecordU32(200),
-      rec(0x2101, new Uint8Array(0)), // end marker
-      pivotRecordU32(999), // should be ignored
+      pcRecordsHeader(2),
+      pcRecord([u32(0)]),
+      pcRecord([u32(0)]),
+      pcRecordsEnd(),
     );
     const xlsb = buildXlsb({
       sheetNames: ['S'],
@@ -202,5 +204,70 @@ describe('pivot cache field descriptors', () => {
     expect(pc.fields.map(f => f.kind)).toEqual(['indexed', 'number', 'date']);
     expect(pc.fields[0].sharedItems.map(c => (c as { v: unknown })?.v)).toEqual(['North', 'South']);
     expect(pc.fields[0].isSrc).toBe(true);
+  });
+});
+
+describe('pivot cache row decoding', () => {
+  it('decodes PCDIDateTime with non-zero hour (F4)', async () => {
+    const def = concat(
+      pcdFieldFull('When', { isSrc: true, fDate: true }),
+      pcdDate(2024, 5, 10, 13, 30, 0),
+    );
+    const rgb = concat(u32(0));
+    const recs = concat(pcRecordsHeader(1), pcRecord([rgb]), pcRecordsEnd());
+    const xlsb = buildXlsb({
+      sheetNames: ['S'], sharedStrings: [], sheetRecords: [],
+      extraEntries: {
+        'xl/pivotCache/pivotCacheDefinition1.bin': def,
+        'xl/pivotCache/pivotCacheRecords1.bin': recs,
+      },
+    });
+    const wb = await parseXlsb(xlsb, { parsePivotCaches: true });
+    expect(wb.pivotCaches[0].rows[0][0]).toEqual({ t: 'd', v: '2024-05-10T13:30:00' });
+  });
+
+  it('decodes BrtBeginPCDIRun number and error runs (F5)', async () => {
+    const def = concat(
+      pcdFieldFull('Num', { isSrc: true, fNum: true }),
+      pcdRun(0x01, [1.5, 2.5]),
+      pcdFieldFull('Err', { isSrc: true, fText: true }),
+      pcdRun(0x10, [0x17]), // #REF!
+    );
+    const rgb = concat(u32(0), u32(0));
+    const recs = concat(pcRecordsHeader(1), pcRecord([rgb]), pcRecordsEnd());
+    const xlsb = buildXlsb({
+      sheetNames: ['S'], sharedStrings: [], sheetRecords: [],
+      extraEntries: {
+        'xl/pivotCache/pivotCacheDefinition1.bin': def,
+        'xl/pivotCache/pivotCacheRecords1.bin': recs,
+      },
+    });
+    const wb = await parseXlsb(xlsb, { parsePivotCaches: true });
+    expect(wb.pivotCaches[0].fields[0].sharedItems[1]).toEqual({ t: 'n', v: 2.5 });
+    expect(wb.pivotCaches[0].fields[1].sharedItems[0]).toEqual({ t: 'e', v: '#REF!' });
+  });
+
+  it('preserves numeric-as-text and non-Latin strings (F8)', async () => {
+    const def = concat(
+      pcdFieldFull('Code', { isSrc: true, fText: true }),
+      pcdStr('12345'),
+      pcdStr('مرحبا'),
+    );
+    const recs = concat(
+      pcRecordsHeader(2),
+      pcRecord([u32(0)]),
+      pcRecord([u32(1)]),
+      pcRecordsEnd(),
+    );
+    const xlsb = buildXlsb({
+      sheetNames: ['S'], sharedStrings: [], sheetRecords: [],
+      extraEntries: {
+        'xl/pivotCache/pivotCacheDefinition1.bin': def,
+        'xl/pivotCache/pivotCacheRecords1.bin': recs,
+      },
+    });
+    const wb = await parseXlsb(xlsb, { parsePivotCaches: true });
+    expect(wb.pivotCaches[0].rows[0][0]).toEqual({ t: 's', v: '12345' });
+    expect(wb.pivotCaches[0].rows[1][0]).toEqual({ t: 's', v: 'مرحبا' });
   });
 });
