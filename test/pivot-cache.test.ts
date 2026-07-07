@@ -5,7 +5,7 @@ import {
   pcdRun, pcdErr, pcRecord, f64,
   pcRecordsHeader, pcRecordsEnd,
 } from './helpers';
-import { BRT_PCDI_STRING } from '../src/record-stream.js';
+import { BRT_PCDI_STRING, BRT_PC_RECORD_DT, BRT_PCDINUMBER } from '../src/record-stream.js';
 
 // Minimal pivot-cache fixtures. The current pivot-cache decoder is heuristic
 // (P5 of the roadmap will rewrite it spec-first), so these tests only lock
@@ -269,5 +269,31 @@ describe('pivot cache row decoding', () => {
     const wb = await parseXlsb(xlsb, { parsePivotCaches: true });
     expect(wb.pivotCaches[0].rows[0][0]).toEqual({ t: 's', v: '12345' });
     expect(wb.pivotCaches[0].rows[1][0]).toEqual({ t: 's', v: 'مرحبا' });
+  });
+});
+
+describe('pivot cache PCDIDT mode', () => {
+  it('decodes BrtPCRRecordDt rows via per-field BrtPCDI* records (F2)', async () => {
+    const def = concat(
+      pcdFieldFull('Name', { isSrc: true, fText: true }),
+      pcdStr('Alice'),
+      pcdFieldFull('Val', { isSrc: true, fNum: true }),
+    );
+    const row = concat(
+      rec(BRT_PC_RECORD_DT, new Uint8Array(0)),
+      rec(BRT_PCDI_STRING, concat(u32(5), u16le('Alice'))),
+      rec(BRT_PCDINUMBER, f64(3.14)),
+    );
+    const recs = concat(pcRecordsHeader(1), row, pcRecordsEnd());
+    const xlsb = buildXlsb({
+      sheetNames: ['S'], sharedStrings: [], sheetRecords: [],
+      extraEntries: {
+        'xl/pivotCache/pivotCacheDefinition1.bin': def,
+        'xl/pivotCache/pivotCacheRecords1.bin': recs,
+      },
+    });
+    const wb = await parseXlsb(xlsb, { parsePivotCaches: true });
+    expect(wb.pivotCaches[0].rows.length).toBe(1);
+    expect(wb.pivotCaches[0].rows[0]).toEqual([{ t: 's', v: 'Alice' }, { t: 'n', v: 3.14 }]);
   });
 });
