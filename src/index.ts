@@ -123,20 +123,32 @@ export async function parseXlsb(
   }
 
   // Pivot caches — opt-in since P4 (default: skip).
+  // Enumerate pivotCacheDefinitionN.bin parts dynamically (was hardcoded to
+  // 1+2 in 0.2.0; the audit §2.7 flagged this). For each definition part we
+  // look for its matching records part by numeric suffix.
   if (parsePivotCaches) {
-    const pcd1 = zip['xl/pivotCache/pivotCacheDefinition1.bin'];
-    const pcd2 = zip['xl/pivotCache/pivotCacheDefinition2.bin'];
-    const pcr1 = zip['xl/pivotCache/pivotCacheRecords1.bin'];
-    const pcr2 = zip['xl/pivotCache/pivotCacheRecords2.bin'];
-    if (pcd1 && pcr1) {
-      onProgress?.('Pivot cache 1...', 33);
-      out.pivotCaches.push(parsePivotCache('PivotCache1', pcd1, pcr1));
-      await tick();
-    }
-    if (pcd2 && pcr2) {
-      onProgress?.('Pivot cache 2...', 34);
-      out.pivotCaches.push(parsePivotCache('PivotCache2', pcd2, pcr2));
-      await tick();
+    const cacheDefPaths = Object.keys(zip)
+      .filter(k => /^xl\/pivotCache\/pivotCacheDefinition\d+\.bin$/.test(k))
+      .sort((a, b) => {
+        const na = parseInt(a.match(/(\d+)\.bin$/)![1], 10);
+        const nb = parseInt(b.match(/(\d+)\.bin$/)![1], 10);
+        return na - nb;
+      });
+    for (let ci = 0; ci < cacheDefPaths.length; ci++) {
+      const defPath = cacheDefPaths[ci];
+      const num = defPath.match(/(\d+)\.bin$/)![1];
+      const recPath = `xl/pivotCache/pivotCacheRecords${num}.bin`;
+      const def = zip[defPath];
+      const recs = zip[recPath];
+      if (def && recs) {
+        onProgress?.(`Pivot cache ${num}...`, 33 + ci);
+        try {
+          out.pivotCaches.push(parsePivotCache(`PivotCache${num}`, def, recs));
+        } catch {
+          // F11: a single malformed cache must not abort the whole workbook.
+        }
+        await tick();
+      }
     }
   }
 

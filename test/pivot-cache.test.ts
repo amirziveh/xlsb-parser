@@ -272,6 +272,27 @@ describe('pivot cache row decoding', () => {
   });
 });
 
+describe('pivot cache robustness', () => {
+  it('skips a malformed cache without aborting the workbook (F11)', async () => {
+    const goodDef = concat(pcdFieldFull('F', { isSrc: true, fText: true }), pcdStr('x'));
+    const goodRecs = concat(pcRecordsHeader(0), pcRecordsEnd());
+    // malformed: truncated records part with broken BrtPCRRecord
+    const brokenRec = new Uint8Array([0x21, 0x05, 0x00, 0x00, 0x00]); // truncated
+    const xlsb = buildXlsb({
+      sheetNames: ['S'], sharedStrings: [], sheetRecords: [],
+      extraEntries: {
+        'xl/pivotCache/pivotCacheDefinition1.bin': goodDef,
+        'xl/pivotCache/pivotCacheRecords1.bin': goodRecs,
+        'xl/pivotCache/pivotCacheDefinition2.bin': concat(pcdFieldFull('G', { isSrc: true, fText: true })),
+        'xl/pivotCache/pivotCacheRecords2.bin': brokenRec,
+      },
+    });
+    const wb = await parseXlsb(xlsb, { parsePivotCaches: true });
+    expect(wb.pivotCaches.length).toBe(1);
+    expect(wb.pivotCaches[0].fieldNames).toContain('F');
+  });
+});
+
 describe('pivot cache PCDIDT mode', () => {
   it('decodes BrtPCRRecordDt rows via per-field BrtPCDI* records (F2)', async () => {
     const def = concat(
