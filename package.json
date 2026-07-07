@@ -1,6 +1,6 @@
 {
   "name": "xlsb-parser",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0-rc.2",
   "description": "Pure-JS XLSB (Excel Binary Workbook) parser. No native addons. Works in browsers and Node.js 20+.",
   "type": "module",
   "main": "dist/index.js",
