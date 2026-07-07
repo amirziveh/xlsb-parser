@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { parseXlsb } from '../src/index.js';
 import {
-  buildXlsb, rec, u32, u16le, concat, pcdFieldFull, pcdStr, pcdDate, pcdNum,
-  pcdRun, pcdErr, pcRecord, f64,
+  buildXlsb, rec, u32, u16le, concat, pcdFieldFull, pcdStr, pcdDate,
+  pcdRun, pcRecord, f64,
   pcRecordsHeader, pcRecordsEnd,
 } from './helpers';
 import { BRT_PCDI_STRING, BRT_PC_RECORD_DT, BRT_PCDINUMBER } from '../src/record-stream.js';
