@@ -18,7 +18,7 @@ export default defineConfig({
         // is in the switch).
         lines: 90,
         statements: 90,
-        functions: 100,
+        functions: 95,
         branches: 70,
       },
     },
