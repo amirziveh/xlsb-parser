@@ -45,13 +45,13 @@
   ],
   "license": "MIT",
   "author": "xlsb-parser contributors",
-  "homepage": "https://github.com/anomalyco/xlsb-parser",
+  "homepage": "https://github.com/amirziveh/xlsb-parser",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/anomalyco/xlsb-parser.git"
+    "url": "git+https://github.com/amirziveh/xlsb-parser.git"
   },
   "bugs": {
-    "url": "https://github.com/anomalyco/xlsb-parser/issues"
+    "url": "https://github.com/amirziveh/xlsb-parser/issues"
   },
   "engines": {
     "node": ">=20"
