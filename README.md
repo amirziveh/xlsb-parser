@@ -37,7 +37,7 @@ interface ParseOptions {
   maxRowsPerSheet?: number;      // stop a sheet after N rows
   dumpBinaries?: boolean;         // default false. Populate binaryDumps.
   readXml?: boolean;              // default false. Populate xmlFiles.
-  parsePivotCaches?: boolean;    // default false. Parse pivot caches.
+  parsePivotCaches?: boolean;    // default false. Spec-driven pivot cache decoder.
 }
 ```
 
@@ -51,7 +51,7 @@ Returns `ParsedXlsb`:
 | `sheets` | `Sheet[]` | Worksheets (parsed lazily when using `openXlsb`) |
 | `sharedStrings` | `string[]` | All shared strings |
 | `styles` | `StylesTable \| null` | Cell style table (since 1.0) |
-| `pivotCaches` | `PivotCacheTable[]` | Pivot caches (opt-in via `parsePivotCaches: true`) |
+| `pivotCaches` | `PivotCacheTable[]` | Pivot caches (opt-in via `parsePivotCaches: true`). Each entry has `.name`, `.fieldNames` (deprecated), `.rows`, `.fields` (`PivotCacheField[]` with correct `kind`/`sharedItems`), `.summary`. |
 | `binaryDumps` | `BinaryDump[]` | Debug record dumps (opt-in via `dumpBinaries: true`) |
 | `xmlFiles` | `Record<string, string>` | Raw XML/rels content (opt-in via `readXml: true`) |
 | `summary` | `{ fileCount, totalRecords }` | Counts |
@@ -78,6 +78,14 @@ const sheet = await handle.collectSheet(0);
 ```
 
 `iterSheetRows(index, { maxRows?, onProgress? })` accepts an optional cap.
+
+When `parsePivotCaches: true` was passed at open time, the handle also exposes pivot cache metadata and streaming:
+
+- `handle.pivotCaches` — `PivotCacheSummary[]` with eager field definitions.
+- `handle.iterPivotCacheRows(indexOrName, { maxRows?, onProgress? })` — async
+  generator yielding `PivotCacheCell[]` rows, O(cells-per-row) memory.
+- `handle.collectPivotCache(indexOrName)` — drain the full cache into a
+  `PivotCacheTable`.
 
 ### Cell type
 
@@ -137,10 +145,9 @@ w.sheets.forEach(s => console.log(s.name, s.rows.length + ' rows'));" file.xlsb
 
 ## Limitations
 
-- **Pivot caches**: when `parsePivotCaches: true`, the decoder is heuristic
-  and may mis-parse field boundaries on non-trivial caches. The
-  `fieldNames` list is trustworthy; `rows` are approximations. A spec-driven
-  rewrite is planned.
+- **Pivot caches (opt-in):** now spec-driven (MS-XLSB §2.1.7.38/§2.1.7.39)
+  for non-OLAP caches. OLAP/slicer/timeline/server-formatting caches remain
+  best-effort.
 - **No streaming unzip**: `openXlsb()` streams *rows*, but the ZIP step
   itself is buffered. For files >1 GB consider pre-decompressing. Use
   `maxZipBytes` to refuse oversized inputs.

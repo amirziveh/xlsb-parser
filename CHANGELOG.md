@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Spec-driven pivot cache decoder** (opt-in `parsePivotCaches: true`, replaces the
+  heuristic sampler). The new decoder reads authoritative `BrtBeginPCDField` field types,
+  `BrtBeginPCDFAtbl` flags (`fNumField`, `fDateInField`, `fHasTextItem`), and
+  `BrtBeginPCDIRun`/`BrtPCDI*` shared-item records from the definition part, producing
+  per-field `PivotCacheField` descriptors with correct `kind` and `sharedItems`.
+- `PivotCacheCell` discriminated union (`'s' | 'n' | 'd' | 'b' | 'e' | 'blank'`) for
+  decoded cache cell values. Rows remain indexable as `PivotCacheCell[][]`.
+- `PivotCacheField` and `PivotCacheSummary` types.
+- **Streaming pivot cache rows** via `openXlsb(..., { parsePivotCaches: true })`:
+  cache **definitions** are parsed eagerly, **rows** stream lazily through
+  `handle.iterPivotCacheRows(indexOrName, { maxRows?, onProgress? })`.
+  `handle.collectPivotCache(indexOrName)` drains the full cache.
+- `parsePivotCache` is guarded within `parseXlsb`/`openXlsb` — one malformed
+  cache no longer aborts the entire workbook (F11).
+
+### Fixed
+- **PCDIDateTime** day-of-month now read as `u8` (was `u16`, corrupting datetimes
+  with non-zero hours; F4).
+- **BrtBeginPCDIRun** now handles `mdSxoper` 0x01 (number runs) and 0x10 (error
+  runs) in addition to 0x02/0x20 (F5).
+- **BrtPCRRecordDt** (per-field-value records) rows now decode instead of being
+  silently skipped (F2).
+- **String fields** no longer require `[A-Za-z]` characters — numeric-as-text
+  and non-Latin text are preserved (F8).
+- **Field names** are taken from the definition part rather than truncated by
+  the first 5 data rows (F10).
+- `BRT_PCDI_STRING2` (0x001f) string shared items are handled alongside 0x0018.
+
 ## [1.0.0-rc.1] — 2026-07-07
 
 ### Added
